@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=69.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "graflow-django"
+version = "0.1.0"
+description = "Reference Django project exposing a LangGraph-powered flows API."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENCE" }
+authors = [
+  { name = "Graflow Contributors" }
+]
+keywords = ["django", "langgraph", "rest-api", "flows"]
+dependencies = [
+  "Django>=5.2,<6.0",
+  "djangorestframework>=3.15,<4.0",
+  "langgraph>=0.2.45",
+  "pydantic>=2.7",
+  "python-dotenv>=1.0",
+  "orjson>=3.10",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.2"]
+dev = [
+  "coverage[toml]>=7.6",
+  "pytest>=9.0",
+  "pytest-django>=4.8",
+  "black>=24.8",
+  "ruff>=0.7",
+  "mypy>=1.11",
+  "django-stubs[compatible]>=5.0",
+  "types-orjson>=3.6",
+]
+
+[project.urls]
+Homepage = "https://github.com/YOUR_ORG/graflow-django"
+Source = "https://github.com/YOUR_ORG/graflow-django"
+Issues = "https://github.com/YOUR_ORG/graflow-django/issues"
+
+[tool.pytest.ini_options]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.coverage.run]
+source = ["graflow", "myflows"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+select = ["E", "F", "I"]
+extend-select = ["B", "UP", "C4"]
+ignore = ["E203"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["mypy_django_plugin.main"]
+strict_optional = true
+ignore_missing_imports = true
+

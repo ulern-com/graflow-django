@@ -1,0 +1,37 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Django stuff
+db.sqlite3
+media/
+staticfiles/
+
+# Logs and local settings
+*.log
+.env
+.env.*
+
+# IDE / tooling
+.vscode/
+.idea/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# macOS
+.DS_Store
+
