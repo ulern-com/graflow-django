@@ -10,7 +10,13 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
 from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -37,7 +43,9 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django_extensions',
     'rest_framework',
+    'drf_spectacular',
     'graflow',
 ]
 
@@ -76,8 +84,15 @@ WSGI_APPLICATION = 'myflows.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('DB_NAME', 'myflows'),
+        'USER': os.getenv('DB_USER', 'postgres'),
+        'PASSWORD': os.getenv('DB_PASSWORD', 'postgres'),
+        'HOST': os.getenv('DB_HOST', '127.0.0.1'),  # Use 127.0.0.1 to force IPv4 and connect to Docker
+        'PORT': os.getenv('DB_PORT', '5432'),
+        'OPTIONS': {
+            'sslmode': os.getenv('DB_SSLMODE', 'disable'),
+        },
     }
 }
 
@@ -123,7 +138,37 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# Django REST Framework settings
+REST_FRAMEWORK = {
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.AllowAny',  # Only for demo/testing
+    ],
+}
+
+# Spectacular settings
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Flows API',
+    'DESCRIPTION': 'Flows API of Graflow Django app',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': True,
+}
+
 # Graflow settings
 GRAFLOW_APP_NAME = 'myflows'
 GRAFLOW_PERSISTENCE_BACKEND = 'django'  # or 'memory' for testing
 GRAFLOW_NODE_CACHE_TTL = 30 * 24 * 60 * 60  # 1 month
+GRAFLOW_REQUIRE_AUTHENTICATION = False  # Only for demo/testing
+
+# Register graphs statically from settings
+# Format: app_name, flow_type, version, builder function path, state class path
+GRAFLOW_GRAPHS = [
+    {
+        'app_name': 'myflows',
+        'flow_type': 'hello_world',
+        'version': 'v1',
+        'builder': 'myflows.graphs.hello_world:build_hello_world_graph',  # module.path:function_name
+        'state': 'myflows.graphs.hello_world:HelloWorldState',     # module.path:class_name
+        'is_latest': True,
+    },
+]

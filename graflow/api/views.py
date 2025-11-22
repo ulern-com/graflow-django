@@ -2,14 +2,18 @@ import logging
 
 from django.conf import settings
 from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiParameter, OpenApiResponse
 from rest_framework import decorators, status, viewsets
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 
 from graflow.api.serializers import (
+    FlowCreateSerializer,
     FlowDetailSerializer,
     FlowListSerializer,
+    FlowResumeSerializer,
     FlowStateSerializer,
+    FlowStatsSerializer,
     FlowTypeSerializer,
 )
 from graflow.api.throttling import FlowCreationThrottle, FlowResumeThrottle
@@ -19,15 +23,30 @@ from graflow.models import Flow
 logger = logging.getLogger(__name__)
 
 
+def get_permissions():
+    """
+    Get the permissions for the viewset based on the GRAFLOW_REQUIRE_AUTHENTICATION setting.
+    """
+    require_auth = getattr(settings, 'GRAFLOW_REQUIRE_AUTHENTICATION', True)
+    if require_auth:
+        return [IsAuthenticated()]
+    return [AllowAny()]
+
+
 class FlowViewSet(viewsets.GenericViewSet):
-    permission_classes = [IsAuthenticated]
     serializer_class = FlowDetailSerializer
     lookup_field = "pk"
+
+    def get_permissions(self):
+        return get_permissions()
 
     def get_queryset(self):
         """
         Ensure users can only access their own flows.
+        When authentication is disabled, return all flows with user=None.
         """
+        if not self.request.user.is_authenticated:
+            return Flow.objects.filter(user=None).exclude(status=Flow.STATUS_CANCELLED)
         return Flow.objects.filter(user=self.request.user).exclude(status=Flow.STATUS_CANCELLED)
 
     def get_object(self):
@@ -52,6 +71,78 @@ class FlowViewSet(viewsets.GenericViewSet):
         result_state = flow.resume(validated_state)
         return result_state
 
+    @extend_schema(
+        summary="List flows",
+        description="""
+        List flows with optional filtering.
+        
+        By default, returns only in-progress flows (pending, running, interrupted).
+        Use `status=all` to include all statuses, or specify a specific status.
+        
+        **State Filtering:**
+        You can filter flows by their state values using the `state__*` query parameter pattern.
+        Use dot notation for nested fields: `state__counter=5` or `state__nested_data__field=value`.
+        Multiple state filters are combined with AND logic.
+        
+        **Examples:**
+        - List all interrupted flows: `/flows/?status=interrupted`
+        - List flows of specific type: `/flows/?flow_type=hello_world`
+        - Filter by state: `/flows/?state__counter=5`
+        - Combine filters: `/flows/?flow_type=hello_world&status=interrupted&state__counter=42`
+        - Get detailed info: `/flows/?is_detailed=true`
+        """,
+        parameters=[
+            OpenApiParameter(
+                name="flow_type",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description="Filter by flow type (e.g., 'hello_world')",
+            ),
+            OpenApiParameter(
+                name="status",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description="Filter by status. Options: 'pending', 'running', 'interrupted', 'completed', 'failed', 'cancelled', or 'all'. Defaults to in-progress flows if not specified.",
+                enum=["pending", "running", "interrupted", "completed", "failed", "cancelled", "all"],
+            ),
+            OpenApiParameter(
+                name="is_detailed",
+                type=bool,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description="Return detailed flow information including state. Default: false",
+            ),
+            OpenApiParameter(
+                name="state__*",
+                type=dict,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description="Filter by state fields. Use dot notation for nested fields (e.g., state__counter=5, state__nested_data__field=value). Multiple filters are combined with AND.",
+                style="deepObject",
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=FlowListSerializer(many=True),
+                description="List of flows. Returns FlowListSerializer by default, or FlowDetailSerializer if is_detailed=true",
+            ),
+        },
+        examples=[
+            OpenApiExample(
+                "List in-progress flows",
+                value=[],
+                response_only=True,
+            ),
+            OpenApiExample(
+                "List with filters",
+                description="Filter by type and state",
+                value=[],
+                response_only=True,
+            ),
+        ],
+    )
     def list(self, request):
         """
         List flows with optional filtering.
@@ -106,21 +197,102 @@ class FlowViewSet(viewsets.GenericViewSet):
             serializer = FlowListSerializer(flows, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        summary="Retrieve a flow",
+        description="""
+        Get detailed information about a specific flow.
+        
+        Returns the full flow object including state, current_node, and error_message.
+        Automatically filters to ensure users can only access their own flows.
+        """,
+        responses={
+            200: FlowDetailSerializer,
+            404: OpenApiResponse(
+                description="Not Found",
+                examples=[OpenApiExample("Not Found", value={"detail": "Not found."})],
+            ),
+        },
+    )
     def retrieve(self, request, pk=None):
+        """
+        Retrieve a specific flow by ID.
+        
+        Returns detailed information including state and current execution node.
+        """
         # This now automatically filters by user due to get_object()
         flow = self.get_object()
         serializer = FlowDetailSerializer(flow)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        summary="Create a new flow",
+        description="""
+        Create and start a new flow instance.
+        
+        The flow will be initialized with the provided state (if any) and
+        will execute until it reaches a completion or interrupt point.
+        
+        **Required:**
+        - `flow_type`: Must be a registered flow type (check `/api/graflow/flow-types/`)
+        
+        **Optional:**
+        - `state`: Initial state dictionary matching the flow type's state schema
+        - `display_name`: Human-readable name for the flow
+        - `cover_image_url`: URL to a cover image for the flow
+        
+        Returns the created flow with its current state and status.
+        """,
+        request=FlowCreateSerializer,
+        responses={
+            201: FlowDetailSerializer,
+            400: OpenApiResponse(
+                description="Validation Error",
+                examples=[OpenApiExample(
+                    "Validation Error",
+                    value={
+                        "error": "No graph found for flow_type 'invalid_type' in app 'myflows'"
+                    }
+                )],
+            ),
+        },
+        examples=[
+            OpenApiExample(
+                "Create Hello World Flow",
+                value={
+                    "flow_type": "hello_world",
+                    "display_name": "My First Flow",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Create Flow with State",
+                value={
+                    "flow_type": "hello_world",
+                    "state": {"message": "Hello from API"},
+                    "display_name": "Greeting Flow",
+                },
+                request_only=True,
+            ),
+        ],
+    )
     def create(self, request):
+        """
+        Create a new flow instance.
+        
+        Validates the flow_type, creates the flow, and executes it until
+        completion or an interrupt point. If initialization fails, the flow
+        is automatically cancelled and an error is returned.
+        """
         self.throttle_classes = [FlowCreationThrottle]
-
-        flow_type = request.data.get("flow_type")
-        if not flow_type:
-            return Response({"error": "flow_type is required"}, status=status.HTTP_400_BAD_REQUEST)
-
+        
+        # Use serializer for input validation and schema
+        serializer = FlowCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated_data = serializer.validated_data
+        
+        flow_type = validated_data['flow_type']
+        
         try:
-            # Use getattr with default to safely access settings
             app_name = getattr(settings, 'GRAFLOW_APP_NAME', 'graflow')
             graph_version = get_latest_graph_version(flow_type, app_name)
             if graph_version is None:
@@ -129,29 +301,28 @@ class FlowViewSet(viewsets.GenericViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             flow = Flow.objects.create(
-                user=request.user,
+                user=request.user if request.user.is_authenticated else None,
                 app_name=app_name,
                 flow_type=flow_type,
                 graph_version=graph_version,
-                display_name=request.data.get("display_name") or None,
-                cover_image_url=request.data.get("cover_image_url"),
+                display_name=validated_data.get("display_name") or None,
+                cover_image_url=validated_data.get("cover_image_url") or None,
             )
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             # Start the flow with the initial state (user_id, flow_id)
-            state = {"user_id": request.user.id, "flow_id": flow.id}
+            user_id = request.user.id if request.user.is_authenticated else None
+            state = {"user_id": user_id, "flow_id": flow.id}
             self._resume_flow(flow, state)
 
             # Resume the flow with the request state, if provided
-            state = request.data.get("state")
-            if state:
-                self._resume_flow(flow, state)
+            if validated_data.get("state"):
+                self._resume_flow(flow, validated_data["state"])
         except Exception as e:
             # Clean up the flow if initialization fails
             logger.error(f"Error initializing flow {flow.id}: {str(e)}", exc_info=True)
-            flow.cancel()
             flow.refresh_from_db()
             return Response(
                 {
@@ -164,10 +335,25 @@ class FlowViewSet(viewsets.GenericViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        serializer = FlowDetailSerializer(flow)
-        response_data = serializer.data
-        return Response(response_data, status=status.HTTP_201_CREATED)
+        response_serializer = FlowDetailSerializer(flow)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
+    @extend_schema(
+        summary="Delete a flow",
+        description="""
+        Delete a flow (cancels it).
+        
+        This is idempotent - succeeds even if the flow is already in a terminal state.
+        For stricter validation that returns errors on invalid states, use the `/cancel/` endpoint instead.
+        """,
+        responses={
+            204: None,
+            404: OpenApiResponse(
+                description="Not Found",
+                examples=[OpenApiExample("Not Found", value={"detail": "Not found."})],
+            ),
+        },
+    )
     def destroy(self, request, pk=None):
         """
         Delete a flow (cancels it).
@@ -183,6 +369,40 @@ class FlowViewSet(viewsets.GenericViewSet):
             pass
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @extend_schema(
+        summary="Cancel a flow",
+        description="""
+        Cancel a flow (hard cancellation - cannot be resumed).
+        
+        Unlike DELETE, this endpoint returns an error if the flow is already in a terminal state.
+        Use this for explicit cancellation with validation.
+        """,
+        request=None,
+        responses={
+            200: OpenApiResponse(
+                description="Success",
+                examples=[OpenApiExample(
+                    "Success",
+                    value={"message": "Flow cancelled successfully", "flow_id": 123},
+                )],
+            ),
+            400: OpenApiResponse(
+                description="Already Terminated",
+                examples=[OpenApiExample(
+                    "Already Terminated",
+                    value={
+                        "error": "Flow is already in a terminal state",
+                        "flow_id": 123,
+                        "flow_status": "completed",
+                    },
+                )],
+            ),
+            404: OpenApiResponse(
+                description="Not Found",
+                examples=[OpenApiExample("Not Found", value={"detail": "Not found."})],
+            ),
+        },
+    )
     @decorators.action(detail=True, methods=["post"], url_path="cancel")
     def cancel(self, request, pk=None):
         """
@@ -205,6 +425,65 @@ class FlowViewSet(viewsets.GenericViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+    @extend_schema(
+        summary="Resume a flow",
+        description="""
+        Resume flow execution with updated state.
+        
+        Use this endpoint to continue a flow from an interrupt point or to update
+        the flow's state. The request body is the state dictionary itself - its structure
+        must match the flow type's state definition.
+        
+        **Important:** The request body structure varies by flow type. Check the flow type's
+        state definition or use the `/flow-types/` endpoint to understand the expected structure.
+        
+        **Returns 400 if:**
+        - Flow is in a terminal state (completed, failed, cancelled)
+        - Flow is currently running
+        - State validation fails (structure doesn't match flow type)
+        
+        The response includes the updated state after execution.
+        """,
+        request={
+            "application/json": {
+                "type": "object",
+                "description": "State dictionary matching the flow type's state schema. Structure varies by flow_type.",
+                "additionalProperties": True,
+            }
+        },
+        responses={
+            200: FlowStateSerializer,
+            400: OpenApiResponse(
+                description="Validation Error",
+                examples=[OpenApiExample(
+                    "Validation Error",
+                    value={
+                        "error": "Flow cannot be resumed: already in terminal state",
+                        "flow_id": 123,
+                        "flow_status": "completed",
+                    },
+                )],
+            ),
+            404: OpenApiResponse(
+                description="Not Found",
+                examples=[OpenApiExample("Not Found", value={"detail": "Not found."})],
+            ),
+        },
+        examples=[
+            OpenApiExample(
+                "Resume Hello World Flow",
+                description="Example for hello_world flow type",
+                value={"message": "Hello from resume"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Resume with Complex State",
+                description="Example for flows with nested state",
+                value={"counter": 5, "branch_choice": "right", "data": {"id": 123}},
+                request_only=True,
+            ),
+        ],
+    )
     @decorators.action(detail=True, methods=["post"], url_path="resume")
     def resume(self, request, pk=None):
         """
@@ -248,6 +527,43 @@ class FlowViewSet(viewsets.GenericViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+    @extend_schema(
+        summary="Get flow statistics",
+        description="""
+        Get flow statistics for the authenticated user.
+        
+        Returns counts grouped by:
+        - **Total**: Total number of flows (excluding cancelled)
+        - **by_status**: Counts for each status (pending, running, interrupted, completed, failed, cancelled)
+        - **by_type**: Counts grouped by flow_type
+        
+        Only includes flows accessible to the current user (user's own flows, or all flows with user=None if authentication is disabled).
+        """,
+        responses={
+            200: FlowStatsSerializer,
+        },
+        examples=[
+            OpenApiExample(
+                "Stats Response",
+                value={
+                    "total": 10,
+                    "by_status": {
+                        "pending": 2,
+                        "running": 1,
+                        "interrupted": 3,
+                        "completed": 3,
+                        "failed": 1,
+                        "cancelled": 0,
+                    },
+                    "by_type": {
+                        "hello_world": 8,
+                        "workflow_a": 2,
+                    },
+                },
+                response_only=True,
+            ),
+        ],
+    )
     @decorators.action(detail=False, methods=["get"], url_path="stats")
     def stats(self, request):
         """
@@ -275,6 +591,42 @@ class FlowViewSet(viewsets.GenericViewSet):
 
         return Response(stats_data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        summary="Get most recent flow",
+        description="""
+        Return the most recently modified flow for the authenticated user.
+        
+        By default, returns the most recent in-progress flow. You can filter by
+        flow_type and/or status to get the most recent flow matching those criteria.
+        """,
+        parameters=[
+            OpenApiParameter(
+                name="flow_type",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description="Filter by flow type",
+            ),
+            OpenApiParameter(
+                name="status",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description="Filter by status. Use 'all' to include all statuses. Defaults to in-progress flows.",
+                enum=["pending", "running", "interrupted", "completed", "failed", "cancelled", "all"],
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=FlowDetailSerializer,
+                description="Most recent flow details",
+            ),
+            404: OpenApiResponse(
+                description="No flows found",
+                examples=[OpenApiExample("Not Found", value={"detail": "No flows found"})],
+            ),
+        },
+    )
     @decorators.action(detail=False, methods=["get"], url_path="most-recent")
     def most_recent(self, request):
         """
@@ -320,9 +672,39 @@ class FlowTypeViewSet(viewsets.ViewSet):
     Read-only viewset exposing the registered flow types.
     """
 
-    permission_classes = [IsAuthenticated]
+    def get_permissions(self):
+        return get_permissions()
 
+    @extend_schema(
+        summary="List available flow types",
+        description="""
+        Get a list of all registered flow types available in the system.
+        
+        Each entry includes:
+        - `app_name`: The application namespace
+        - `flow_type`: The flow type identifier (use this when creating flows)
+        - `version`: The version string
+        
+        Use the `flow_type` values from this endpoint when creating new flows.
+        """,
+        responses={200: FlowTypeSerializer(many=True)},
+        examples=[
+            OpenApiExample(
+                "Flow Types Response",
+                value=[
+                    {"app_name": "myflows", "flow_type": "hello_world", "version": "v1"},
+                    {"app_name": "myflows", "flow_type": "workflow_a", "version": "v1"},
+                ],
+                response_only=True,
+            ),
+        ],
+    )
     def list(self, request):
+        """
+        List all registered flow types.
+        
+        Returns metadata about all flow types that can be used to create flows.
+        """
         flow_types = list_registered_graphs()
         serializer = FlowTypeSerializer(flow_types, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)

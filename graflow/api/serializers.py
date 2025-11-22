@@ -4,6 +4,35 @@ from rest_framework.serializers import ModelSerializer, Serializer
 from graflow.models import Flow
 
 
+class FlowCreateSerializer(Serializer):
+    """
+    Serializer for creating a new flow.
+    """
+
+    flow_type = serializers.CharField(
+        required=True,
+        help_text="The type of flow to create (e.g., 'hello_world'). Must be a registered flow type."
+    )
+    state = serializers.DictField(
+        required=False,
+        allow_null=True,
+        help_text="Optional initial state for the flow. Structure depends on the flow_type's state definition."
+    )
+    display_name = serializers.CharField(
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        max_length=255,
+        help_text="User-friendly display name for the flow."
+    )
+    cover_image_url = serializers.URLField(
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        help_text="Optional cover image URL for the flow."
+    )
+
+
 class FlowStateSerializer(Serializer):
     """
     Two-way serializer for LangGraph's graph state based on a provided Pydantic model.
@@ -132,6 +161,45 @@ class FlowDetailSerializer(ModelSerializer):
         if obj.state:
             return obj.state.get("current_node")
         return None
+
+
+class FlowResumeSerializer(Serializer):
+    """
+    Serializer for resuming a flow with updated state.
+    The state structure depends on the flow type's state definition.
+    
+    This accepts any dictionary structure. The actual state validation happens
+    at runtime against the specific flow type's state schema.
+    
+    Example states vary by flow type:
+    - For hello_world: {"message": "Hello"}
+    - For other flows: {"counter": 5, "branch_choice": "right"}
+    """
+
+    # Use DictField to accept any structure
+    # The actual validation happens in FlowStateSerializer with context
+    # This field is just for schema documentation
+    state = serializers.DictField(
+        required=True,
+        allow_empty=False,
+        help_text="State dictionary matching the flow type's state schema. Structure varies by flow_type.",
+    )
+
+
+class FlowStatsSerializer(Serializer):
+    """
+    Response serializer for flow statistics.
+    """
+
+    total = serializers.IntegerField(help_text="Total number of flows")
+    by_status = serializers.DictField(
+        child=serializers.IntegerField(),
+        help_text="Count of flows grouped by status (pending, running, interrupted, completed, failed, cancelled)",
+    )
+    by_type = serializers.DictField(
+        child=serializers.IntegerField(),
+        help_text="Count of flows grouped by flow_type",
+    )
 
 
 class FlowTypeSerializer(Serializer):

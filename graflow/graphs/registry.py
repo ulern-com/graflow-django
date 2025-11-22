@@ -1,3 +1,4 @@
+import logging
 from typing import Callable, Type
 
 from django.conf import settings
@@ -6,6 +7,8 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph
 from langgraph.store.memory import InMemoryStore
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 # Global registries
 _GRAPH_REGISTRY: dict[tuple[str, str, str], Callable[[], StateGraph]] = {}
@@ -176,3 +179,107 @@ def get_graph_state_definition(flow_type: str, app_name: str, version: str = Non
     if graph_state_definition is None:
         raise ValueError(f"No graph state definition found for {app_name}:{flow_type}:{version}")
     return graph_state_definition
+
+
+def _import_from_string(path: str):
+    """
+    Import a class or function from a string path.
+    
+    Args:
+        path: String in format "module.path:attribute"
+        
+    Returns:
+        The imported class or function
+        
+    Raises:
+        ValueError: If path format is invalid or import fails
+    """
+    try:
+        module_path, attr_name = path.rsplit(":", 1)
+    except ValueError:
+        raise ValueError(f"Invalid path format '{path}'. Expected 'module.path:attribute'")
+    
+    try:
+        module = __import__(module_path, fromlist=[attr_name])
+        attr = getattr(module, attr_name)
+        return attr
+    except ImportError as e:
+        raise ValueError(f"Failed to import module '{module_path}': {e}")
+    except AttributeError:
+        raise ValueError(f"Module '{module_path}' has no attribute '{attr_name}'")
+
+
+def register_graphs_from_settings():
+    """
+    Register graphs defined in Django settings.
+    
+    Expects GRAFLOW_GRAPHS setting to be a list of dictionaries, each containing:
+        - app_name: Application name
+        - flow_type: Flow type identifier
+        - version: Version string
+        - builder: String path to builder function (e.g., "myapp.graphs:build_graph")
+        - state: String path to state class (e.g., "myapp.graphs:GraphState")
+        - is_latest: Boolean, whether this is the latest version (default: True)
+    
+    Example:
+        GRAFLOW_GRAPHS = [
+            {
+                'app_name': 'myflows',
+                'flow_type': 'workflow_a',
+                'version': 'v1',
+                'builder': 'myapp.graphs.workflow:build_workflow_a',
+                'state': 'myapp.graphs.workflow:WorkflowAState',
+                'is_latest': True,
+            },
+        ]
+    """
+    graphs_config = getattr(settings, 'GRAFLOW_GRAPHS', [])
+    if not graphs_config:
+        return
+    
+    registered = []
+    errors = []
+    
+    for config in graphs_config:
+        try:
+            app_name = config['app_name']
+            flow_type = config['flow_type']
+            version = config['version']
+            builder_path = config['builder']
+            state_path = config['state']
+            is_latest = config.get('is_latest', True)
+            
+            # Import builder function and state class
+            builder_func = _import_from_string(builder_path)
+            state_class = _import_from_string(state_path)
+            
+            # Register the graph
+            register_graph(
+                app_name=app_name,
+                flow_type=flow_type,
+                version=version,
+                builder_func=builder_func,
+                state_class=state_class,
+                is_latest=is_latest,
+            )
+            
+            registered.append(f"{app_name}:{flow_type}:{version}")
+            logger.info(f"Registered graph from settings: {app_name}:{flow_type}:{version}")
+            
+        except KeyError as e:
+            errors.append(f"Missing required key in graph config: {e}")
+        except ValueError as e:
+            errors.append(f"Invalid graph config: {e}")
+        except Exception as e:
+            errors.append(f"Error registering graph: {e}")
+            logger.exception(f"Failed to register graph from config {config}")
+    
+    if errors:
+        error_msg = "Errors registering graphs from settings:\n" + "\n".join(f"  - {e}" for e in errors)
+        logger.error(error_msg)
+        # Raise if in strict mode, or just log in development
+        if getattr(settings, 'GRAFLOW_STRICT_GRAPH_REGISTRATION', False):
+            raise ValueError(error_msg)
+    
+    if registered:
+        logger.info(f"Successfully registered {len(registered)} graph(s) from settings: {', '.join(registered)}")
