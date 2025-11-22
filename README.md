@@ -4,9 +4,11 @@ This is a Django app plus a reference Django project that has a simple flows API
 
 ## Highlights
 
-- **Full CRUD API for flows** (`/api/graflow/flows/…`) with stats, resume, and cancellation endpoints.
-- **LangGraph integration** with pluggable persistence (PostgreSQL or in-memory).
-- **Django admin** models for inspecting flow state and store/cache tables.
+- **Flows API** to get flow types, CRUD operation on flows, stats, resume, and cancellation endpoints.
+- **User Interaction** based on LangGraph's human-in-the-loop.
+- **Persistence** with pluggable node-cache, checkpointer and store for long-term memory (based on PostgreSQL).
+- **Django admin** for inspecting flow state and store/cache tables using Django ORM (models).
+- **Flow Deifnition and Registration**
 - **Extensive tests** covering API behavior, graph execution, and storage abstractions.
 
 ---
@@ -16,7 +18,7 @@ This is a Django app plus a reference Django project that has a simple flows API
 ```
 graflow-django/
 ├── graflow/                # Reusable app with models, API, graphs, and storage backends
-├── myflows/                # Django project wiring the app + DRF
+├── myflows/                # Reference Django project wiring the app + DRF
 ├── manage.py               # Standard Django entry point
 ├── pyproject.toml          # Project metadata, dependencies, tooling config
 ├── README.md               # You are here
@@ -27,16 +29,16 @@ graflow-django/
 
 ## Requirements
 
-- Python **3.12+** (project currently targets 3.13)
-- SQLite (default) or PostgreSQL 14+ for production persistence
-- Optional: [Graphviz](https://graphviz.org/) if you use the `visualize_graph` management command
+You need Python **3.12+** (project currently targets 3.13). You can install all required Python packages using pip command. See **Quick Start** section. You also need API keys if you are using LLM calls in your flows.
 
 ---
 
 ## Quick Start
 
+To get the idea, you can run this Django project like other Django project. If you want to use the Django app as a 3rd party app in your own Django project, see the **Configuration** sectioin.
+
 ```bash
-git clone https://github.com/YOUR_ORG/graflow-django.git
+git clone https://github.com/ulern-com/graflow-django.git
 cd graflow-django
 
 python -m venv .venv
@@ -51,22 +53,21 @@ python manage.py runserver
 
 Visit `http://localhost:8000/api/graflow/flows/` to explore the DRF browsable API (login required).
 
+Note that to run a flow with LLM call, you need to set your own API key in the environment.
+
 ---
 
 ## Configuration
 
-All settings live in `myflows/settings.py`. Environment-specific overrides can be provided via `.env`, e.g.:
+All settings of this Django project live in `myflows/settings.py`. Environment-specific overrides can be provided via `.env`, e.g.:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `DJANGO_SETTINGS_MODULE` | `myflows.settings` | Standard Django setting |
-| `SECRET_KEY` | dev key | Replace for production |
-| `DATABASE_URL` | SQLite | Configure PostgreSQL when using the Django persistence backend |
-| `GRAFLOW_APP_NAME` | `graflow` | Logical namespace for graphs and flows |
-| `GRAFLOW_PERSISTENCE_BACKEND` | `django` | `django` (PostgreSQL) or `memory` |
-| `GRAFLOW_NODE_CACHE_TTL` | 30 days | Cache TTL for LangGraph node results |
+| `GRAFLOW_APP_NAME` | `myflows` | Logical namespace for graphs and flows |
+| `GRAFLOW_PERSISTENCE_BACKEND` | `django` | `django` (PostgreSQL or any other configured DB) or `memory` |
+| `GRAFLOW_NODE_CACHE_TTL` | 2592000 (30 days) | Cache TTL for LangGraph node results |
 
-Tests default to the in-memory backend so they run without PostgreSQL. Production should use PostgreSQL to enable the Django store, cache, and checkpointer implementations.
+Tests default to the in-memory backend so they run without PostgreSQL. Production should use PostgreSQL to enable the Django store, cache, and checkpointer implementations. Just configure your Django project with PostgreSQL DB and everything should work.
 
 ---
 

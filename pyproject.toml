@@ -2,13 +2,16 @@
 requires = ["setuptools>=69.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools]
+packages = ["graflow"]
+
 [project]
 name = "graflow-django"
 version = "0.1.0"
 description = "Reference Django project exposing a LangGraph-powered flows API."
 readme = "README.md"
 requires-python = ">=3.12"
-license = { file = "LICENCE" }
+license = "MIT"
 authors = [
   { name = "Graflow Contributors" }
 ]
