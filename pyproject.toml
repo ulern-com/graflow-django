@@ -8,20 +8,21 @@ packages = ["graflow"]
 [project]
 name = "graflow-django"
 version = "0.1.0"
-description = "Reference Django project exposing a LangGraph-powered flows API."
+description = "Django app for building long-running, interactive, and stateful AI workflows using LangGraph"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 authors = [
-  { name = "Graflow Contributors" }
+  { name = "Ali Abbasi" }
 ]
-keywords = ["django", "langgraph", "rest-api", "flows"]
+keywords = ["django", "langgraph", "langchain", "rest-api", "flows"]
 dependencies = [
     "Django>=5.2,<6.0",
     "djangorestframework>=3.15,<4.0",
     "django-extensions>=3.2,<4.0",
     "drf-spectacular>=0.27.0,<1.0",
     "langgraph>=1.0.3,<1.0.9",
+    "langgraph-checkpoint-postgres>=3.0.1",
     "pydantic>=2.7",
     "python-dotenv>=1.0",
     "orjson>=3.10",
@@ -31,6 +32,7 @@ dependencies = [
 postgres = ["psycopg[binary]>=3.2"]
 dev = [
     "coverage[toml]>=7.6",
+    "factory-boy>=3.3.0",
     "pytest>=9.0",
     "pytest-cov>=5.0",
     "pytest-django>=4.8",
@@ -42,9 +44,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/YOUR_ORG/graflow-django"
-Source = "https://github.com/YOUR_ORG/graflow-django"
-Issues = "https://github.com/YOUR_ORG/graflow-django/issues"
+Homepage = "https://github.com/ulern-com/graflow-django"
+Source = "https://github.com/ulern-com/graflow-django"
+Issues = "https://github.com/ulern-com/graflow-django/issues"
 
 [tool.pytest.ini_options]
 python_files = ["test_*.py"]
