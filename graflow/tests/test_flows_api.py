@@ -895,6 +895,128 @@ class FlowsAPITest(APITestCase):
         # Should only count user1's flow
         self.assertEqual(response.data["total"], 1)
 
+    # ==================== Most Recent Endpoint Tests ====================
+
+    def test_most_recent_returns_latest_in_progress_flow(self):
+        """Test that most recent returns the latest in-progress flow."""
+        # Create two flows and resume them (they become interrupted/in-progress)
+        flow1 = FlowFactory.create(user=self.user1)
+        flow1.resume({"user_id": self.user1.id, "flow_id": flow1.id})
+
+        # Create another flow (will be more recent)
+        flow2 = FlowFactory.create(user=self.user1)
+        flow2.resume({"user_id": self.user1.id, "flow_id": flow2.id})
+
+        url = reverse("graflow:flow-most-recent")
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should return flow2 as it's more recent
+        self.assertEqual(response.data["id"], flow2.id)
+
+    def test_most_recent_with_status_filter(self):
+        """Test most recent with status filter."""
+        # Create a completed flow
+        flow1 = FlowFactory.create(user=self.user1)
+        flow1.resume({"user_id": self.user1.id, "flow_id": flow1.id})
+        flow1.resume({"user_id": self.user1.id, "flow_id": flow1.id})
+
+        # Create an interrupted flow (more recent)
+        flow2 = FlowFactory.create(user=self.user1)
+        flow2.resume({"user_id": self.user1.id, "flow_id": flow2.id})
+
+        # Get most recent interrupted
+        url = reverse("graflow:flow-most-recent") + "?status=interrupted"
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["id"], flow2.id)
+        self.assertEqual(response.data["status"], "interrupted")
+
+    def test_most_recent_with_flow_type_filter(self):
+        """Test most recent with flow_type filter."""
+        # Create flows of different types
+        flow1 = FlowFactory.create(user=self.user1, flow_type="test_flow")
+        flow1.resume({"user_id": self.user1.id, "flow_id": flow1.id})
+
+        flow2 = FlowFactory.create(user=self.user1, flow_type="minimal_test_flow")
+        flow2.resume({"user_id": self.user1.id, "flow_id": flow2.id})
+
+        # Get most recent test_flow
+        url = reverse("graflow:flow-most-recent") + "?flow_type=test_flow"
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["id"], flow1.id)
+        self.assertEqual(response.data["flow_type"], "test_flow")
+
+    def test_most_recent_with_both_filters(self):
+        """Test most recent with both status and flow_type filters."""
+        # Create multiple flows
+        flow1 = FlowFactory.create(user=self.user1, flow_type="test_flow")
+        flow1.resume({"user_id": self.user1.id, "flow_id": flow1.id})
+
+        flow2 = FlowFactory.create(user=self.user1, flow_type="minimal_test_flow")
+        flow2.resume({"user_id": self.user1.id, "flow_id": flow2.id})
+
+        # Get most recent interrupted test_flow
+        url = reverse("graflow:flow-most-recent") + "?status=interrupted&flow_type=test_flow"
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["id"], flow1.id)
+        self.assertEqual(response.data["flow_type"], "test_flow")
+        self.assertEqual(response.data["status"], "interrupted")
+
+    def test_most_recent_returns_404_when_no_flows(self):
+        """Test that most recent returns 404 when no flows match."""
+        url = reverse("graflow:flow-most-recent")
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertIn("detail", response.data)
+
+    def test_most_recent_respects_user_isolation(self):
+        """Test that most recent only returns flows for the authenticated user."""
+        # Create flow for user2
+        flow_user2 = FlowFactory.create(user=self.user2)
+        flow_user2.resume({"user_id": self.user2.id, "flow_id": flow_user2.id})
+
+        # Try to get most recent as user1
+        url = reverse("graflow:flow-most-recent")
+        response = self.client.get(url)
+
+        # Should return 404 since user1 has no flows
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        # Create flow for user1
+        flow_user1 = FlowFactory.create(user=self.user1)
+        flow_user1.resume({"user_id": self.user1.id, "flow_id": flow_user1.id})
+
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["id"], flow_user1.id)
+
+    def test_most_recent_with_status_all(self):
+        """Test most recent with status=all includes all statuses."""
+        # Create an interrupted flow (older)
+        flow1 = FlowFactory.create(user=self.user1)
+        flow1.resume({"user_id": self.user1.id, "flow_id": flow1.id})
+
+        # Create a completed flow (more recent - created after flow1)
+        flow2 = FlowFactory.create(user=self.user1)
+        flow2.resume({"user_id": self.user1.id, "flow_id": flow2.id})
+        flow2.resume({"user_id": self.user1.id, "flow_id": flow2.id})
+
+        # Get most recent with status=all (should include completed)
+        url = reverse("graflow:flow-most-recent") + "?status=all"
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # flow2 should be more recent since it was created later
+        self.assertEqual(response.data["id"], flow2.id)
+        self.assertEqual(response.data["status"], "completed")
+
     # ==================== Combined Filtering Tests ====================
 
     def test_list_with_status_and_type_filter(self):
@@ -960,11 +1082,7 @@ class FlowTypesAPITest(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         # Filter to only test_app graphs (ignore graphs from settings like myflows)
-        test_app_graphs = [
-            item
-            for item in response.data
-            if item["app_name"] == "test_app"
-        ]
+        test_app_graphs = [item for item in response.data if item["app_name"] == "test_app"]
         self.assertEqual(
             sorted(
                 test_app_graphs,

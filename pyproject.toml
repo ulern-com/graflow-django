@@ -52,6 +52,7 @@ python_functions = ["test_*"]
 [tool.coverage.run]
 source = ["graflow", "myflows"]
 branch = true
+omit = ["graflow/tests/*", "myflows/tests/*"]
 
 [tool.coverage.report]
 show_missing = true
