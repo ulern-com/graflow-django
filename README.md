@@ -136,7 +136,13 @@ All endpoints require authentication by default; DRF session auth is enabled. Yo
 ## Testing
 
 ```bash
-pytest
+just test
+```
+
+Or with coverage:
+
+```bash
+just test-cov
 ```
 
 The suite spins up a fully configured Django test environment, registers sample graphs, and covers:
@@ -151,9 +157,15 @@ Tests that require PostgreSQL are automatically skipped when running against SQL
 
 ## Development Tips
 
-- Format & lint using the configured tools (`ruff`, `black`, etc.) defined in `pyproject.toml`.
-- Use `python manage.py visualize_graph --flow-type your_flow` to inspect graph structure (Graphviz recommended).
-- Refer to `graflow/tests/factories.py` for sample model factories and to bootstrap seed data.
+- **Format code**: `just format` (uses `black`)
+- **Lint code**: `just lint` (uses `ruff`)
+- **Fix linting issues**: `just lint-fix`
+- **Type check**: `just type-check` (uses `mypy`)
+- **Run all checks**: `just check` (lint + type-check)
+- **Visualize graphs**: `python manage.py visualize_graph --flow-type your_flow` (Graphviz recommended)
+- **Refer to** `graflow/tests/factories.py` for sample model factories and to bootstrap seed data
+
+See `justfile` for all available commands. Install `just` from [https://github.com/casey/just](https://github.com/casey/just).
 
 ---
 
@@ -161,7 +173,7 @@ Tests that require PostgreSQL are automatically skipped when running against SQL
 
 1. Fork the repo and create a feature branch.
 2. Install dev dependencies: `pip install -e ".[dev]"`.
-3. Run `pytest` and ensure linting passes before opening a PR.
+3. Run `just check` and `just test` to ensure everything passes before opening a PR.
 4. Describe your change clearly and link related issues.
 
 We welcome bug reports, feature requests, docs updates, and test improvements.
