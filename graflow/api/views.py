@@ -2,16 +2,15 @@ import logging
 
 from django.conf import settings
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiParameter, OpenApiResponse
+from drf_spectacular.utils import OpenApiExample, OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import decorators, status, viewsets
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from graflow.api.serializers import (
     FlowCreateSerializer,
     FlowDetailSerializer,
     FlowListSerializer,
-    FlowResumeSerializer,
     FlowStateSerializer,
     FlowStatsSerializer,
     FlowTypeSerializer,
@@ -27,7 +26,7 @@ def get_permissions():
     """
     Get the permissions for the viewset based on the GRAFLOW_REQUIRE_AUTHENTICATION setting.
     """
-    require_auth = getattr(settings, 'GRAFLOW_REQUIRE_AUTHENTICATION', True)
+    require_auth = getattr(settings, "GRAFLOW_REQUIRE_AUTHENTICATION", True)
     if require_auth:
         return [IsAuthenticated()]
     return [AllowAny()]
@@ -65,7 +64,9 @@ class FlowViewSet(viewsets.GenericViewSet):
             ValidationError: If state validation fails
             Exception: If flow resumption fails
         """
-        serializer = FlowStateSerializer(data=state, context={"graph_state_definition": flow.graph_state_definition})
+        serializer = FlowStateSerializer(
+            data=state, context={"graph_state_definition": flow.graph_state_definition}
+        )
         serializer.is_valid(raise_exception=True)
         validated_state = serializer.validated_data
         result_state = flow.resume(validated_state)
@@ -104,8 +105,20 @@ class FlowViewSet(viewsets.GenericViewSet):
                 type=str,
                 location=OpenApiParameter.QUERY,
                 required=False,
-                description="Filter by status. Options: 'pending', 'running', 'interrupted', 'completed', 'failed', 'cancelled', or 'all'. Defaults to in-progress flows if not specified.",
-                enum=["pending", "running", "interrupted", "completed", "failed", "cancelled", "all"],
+                description=(
+                    "Filter by status. Options: 'pending', 'running', 'interrupted', "
+                    "'completed', 'failed', 'cancelled', or 'all'. "
+                    "Defaults to in-progress flows if not specified."
+                ),
+                enum=[
+                    "pending",
+                    "running",
+                    "interrupted",
+                    "completed",
+                    "failed",
+                    "cancelled",
+                    "all",
+                ],
             ),
             OpenApiParameter(
                 name="is_detailed",
@@ -119,14 +132,21 @@ class FlowViewSet(viewsets.GenericViewSet):
                 type=dict,
                 location=OpenApiParameter.QUERY,
                 required=False,
-                description="Filter by state fields. Use dot notation for nested fields (e.g., state__counter=5, state__nested_data__field=value). Multiple filters are combined with AND.",
+                description=(
+                    "Filter by state fields. Use dot notation for nested fields "
+                    "(e.g., state__counter=5, state__nested_data__field=value). "
+                    "Multiple filters are combined with AND."
+                ),
                 style="deepObject",
             ),
         ],
         responses={
             200: OpenApiResponse(
                 response=FlowListSerializer(many=True),
-                description="List of flows. Returns FlowListSerializer by default, or FlowDetailSerializer if is_detailed=true",
+                description=(
+                    "List of flows. Returns FlowListSerializer by default, "
+                    "or FlowDetailSerializer if is_detailed=true"
+                ),
             ),
         },
         examples=[
@@ -216,7 +236,7 @@ class FlowViewSet(viewsets.GenericViewSet):
     def retrieve(self, request, pk=None):
         """
         Retrieve a specific flow by ID.
-        
+
         Returns detailed information including state and current execution node.
         """
         # This now automatically filters by user due to get_object()
@@ -247,12 +267,14 @@ class FlowViewSet(viewsets.GenericViewSet):
             201: FlowDetailSerializer,
             400: OpenApiResponse(
                 description="Validation Error",
-                examples=[OpenApiExample(
-                    "Validation Error",
-                    value={
-                        "error": "No graph found for flow_type 'invalid_type' in app 'myflows'"
-                    }
-                )],
+                examples=[
+                    OpenApiExample(
+                        "Validation Error",
+                        value={
+                            "error": "No graph found for flow_type 'invalid_type' in app 'myflows'"
+                        },
+                    )
+                ],
             ),
         },
         examples=[
@@ -278,27 +300,27 @@ class FlowViewSet(viewsets.GenericViewSet):
     def create(self, request):
         """
         Create a new flow instance.
-        
+
         Validates the flow_type, creates the flow, and executes it until
         completion or an interrupt point. If initialization fails, the flow
         is automatically cancelled and an error is returned.
         """
         self.throttle_classes = [FlowCreationThrottle]
-        
+
         # Use serializer for input validation and schema
         serializer = FlowCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated_data = serializer.validated_data
-        
-        flow_type = validated_data['flow_type']
-        
+
+        flow_type = validated_data["flow_type"]
+
         try:
-            app_name = getattr(settings, 'GRAFLOW_APP_NAME', 'graflow')
+            app_name = getattr(settings, "GRAFLOW_APP_NAME", "graflow")
             graph_version = get_latest_graph_version(flow_type, app_name)
             if graph_version is None:
                 return Response(
                     {"error": f"No graph found for flow_type '{flow_type}' in app '{app_name}'"},
-                    status=status.HTTP_400_BAD_REQUEST
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
             flow = Flow.objects.create(
                 user=request.user if request.user.is_authenticated else None,
@@ -344,7 +366,8 @@ class FlowViewSet(viewsets.GenericViewSet):
         Delete a flow (cancels it).
         
         This is idempotent - succeeds even if the flow is already in a terminal state.
-        For stricter validation that returns errors on invalid states, use the `/cancel/` endpoint instead.
+        For stricter validation that returns errors on invalid states, "
+        "use the `/cancel/` endpoint instead.
         """,
         responses={
             204: None,
@@ -381,21 +404,25 @@ class FlowViewSet(viewsets.GenericViewSet):
         responses={
             200: OpenApiResponse(
                 description="Success",
-                examples=[OpenApiExample(
-                    "Success",
-                    value={"message": "Flow cancelled successfully", "flow_id": 123},
-                )],
+                examples=[
+                    OpenApiExample(
+                        "Success",
+                        value={"message": "Flow cancelled successfully", "flow_id": 123},
+                    )
+                ],
             ),
             400: OpenApiResponse(
                 description="Already Terminated",
-                examples=[OpenApiExample(
-                    "Already Terminated",
-                    value={
-                        "error": "Flow is already in a terminal state",
-                        "flow_id": 123,
-                        "flow_status": "completed",
-                    },
-                )],
+                examples=[
+                    OpenApiExample(
+                        "Already Terminated",
+                        value={
+                            "error": "Flow is already in a terminal state",
+                            "flow_id": 123,
+                            "flow_status": "completed",
+                        },
+                    )
+                ],
             ),
             404: OpenApiResponse(
                 description="Not Found",
@@ -414,7 +441,10 @@ class FlowViewSet(viewsets.GenericViewSet):
 
         try:
             flow.cancel()
-            return Response({"message": "Flow cancelled successfully", "flow_id": flow.id}, status=status.HTTP_200_OK)
+            return Response(
+                {"message": "Flow cancelled successfully", "flow_id": flow.id},
+                status=status.HTTP_200_OK,
+            )
         except ValueError as e:
             return Response(
                 {
@@ -447,7 +477,10 @@ class FlowViewSet(viewsets.GenericViewSet):
         request={
             "application/json": {
                 "type": "object",
-                "description": "State dictionary matching the flow type's state schema. Structure varies by flow_type.",
+                "description": (
+                    "State dictionary matching the flow type's state schema. "
+                    "Structure varies by flow_type."
+                ),
                 "additionalProperties": True,
             }
         },
@@ -455,14 +488,16 @@ class FlowViewSet(viewsets.GenericViewSet):
             200: FlowStateSerializer,
             400: OpenApiResponse(
                 description="Validation Error",
-                examples=[OpenApiExample(
-                    "Validation Error",
-                    value={
-                        "error": "Flow cannot be resumed: already in terminal state",
-                        "flow_id": 123,
-                        "flow_status": "completed",
-                    },
-                )],
+                examples=[
+                    OpenApiExample(
+                        "Validation Error",
+                        value={
+                            "error": "Flow cannot be resumed: already in terminal state",
+                            "flow_id": 123,
+                            "flow_status": "completed",
+                        },
+                    )
+                ],
             ),
             404: OpenApiResponse(
                 description="Not Found",
@@ -534,10 +569,12 @@ class FlowViewSet(viewsets.GenericViewSet):
         
         Returns counts grouped by:
         - **Total**: Total number of flows (excluding cancelled)
-        - **by_status**: Counts for each status (pending, running, interrupted, completed, failed, cancelled)
+        - **by_status**: Counts for each status "
+        "(pending, running, interrupted, completed, failed, cancelled)
         - **by_type**: Counts grouped by flow_type
         
-        Only includes flows accessible to the current user (user's own flows, or all flows with user=None if authentication is disabled).
+        Only includes flows accessible to the current user "
+        "(user's own flows, or all flows with user=None if authentication is disabled).
         """,
         responses={
             200: FlowStatsSerializer,
@@ -586,7 +623,9 @@ class FlowViewSet(viewsets.GenericViewSet):
                 "failed": flows.filter(status=Flow.STATUS_FAILED).count(),
                 "cancelled": flows.filter(status=Flow.STATUS_CANCELLED).count(),
             },
-            "by_type": {flow_type: flows.filter(flow_type=flow_type).count() for flow_type in flow_types},
+            "by_type": {
+                flow_type: flows.filter(flow_type=flow_type).count() for flow_type in flow_types
+            },
         }
 
         return Response(stats_data, status=status.HTTP_200_OK)
@@ -612,8 +651,19 @@ class FlowViewSet(viewsets.GenericViewSet):
                 type=str,
                 location=OpenApiParameter.QUERY,
                 required=False,
-                description="Filter by status. Use 'all' to include all statuses. Defaults to in-progress flows.",
-                enum=["pending", "running", "interrupted", "completed", "failed", "cancelled", "all"],
+                description=(
+                    "Filter by status. Use 'all' to include all statuses. "
+                    "Defaults to in-progress flows."
+                ),
+                enum=[
+                    "pending",
+                    "running",
+                    "interrupted",
+                    "completed",
+                    "failed",
+                    "cancelled",
+                    "all",
+                ],
             ),
         ],
         responses={
@@ -634,7 +684,8 @@ class FlowViewSet(viewsets.GenericViewSet):
 
         Optional query params:
           - flow_type: filter by graph name
-          - status: filter by status (defaults to in-progress flows if omitted; use "all" for no status filter)
+          - status: filter by status (defaults to in-progress flows if omitted; "
+          "use \"all\" for no status filter)
         """
         flows = self.get_queryset()
 
@@ -658,7 +709,9 @@ class FlowViewSet(viewsets.GenericViewSet):
         flows = flows.by_recency()
 
         # Get the first (most recent)
-        most_recent_flow = flows.first() if hasattr(flows, "first") else (flows[0] if flows else None)
+        most_recent_flow = (
+            flows.first() if hasattr(flows, "first") else (flows[0] if flows else None)
+        )
 
         if not most_recent_flow:
             return Response({"detail": "No flows found"}, status=status.HTTP_404_NOT_FOUND)
@@ -702,7 +755,7 @@ class FlowTypeViewSet(viewsets.ViewSet):
     def list(self, request):
         """
         List all registered flow types.
-        
+
         Returns metadata about all flow types that can be used to create flows.
         """
         flow_types = list_registered_graphs()

@@ -1,10 +1,10 @@
 import logging
+from typing import TYPE_CHECKING, Any
 
 from django.contrib.auth import get_user_model
 from django.db import models
 from django.utils import timezone
 from django.utils.functional import cached_property
-
 from langgraph.types import Command
 
 from graflow.graphs.registry import get_graph, get_graph_state_definition
@@ -12,6 +12,11 @@ from graflow.graphs.registry import get_graph, get_graph_state_definition
 logger = logging.getLogger(__name__)
 
 User = get_user_model()
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import AbstractUser
+
+    UserType = AbstractUser
 
 
 class Store(models.Model):
@@ -51,11 +56,13 @@ class Store(models.Model):
 
 class Checkpoint(models.Model):
     """
-    This is the primary table to make checkpointing possible and works like a timeline of snapshots (super-steps).
+    This is the primary table to make checkpointing possible and works like a timeline
+    of snapshots (super-steps).
 
     For the schema, table name, indexes and other constraints, see:
     https://github.com/langchain-ai/langgraph/blob/main/libs/checkpoint-postgres/langgraph/checkpoint/postgres/base.py
     """
+
     thread_id = models.TextField()
     checkpoint_ns = models.TextField(default="")
     checkpoint_id = models.TextField()  # monotonic ID per thread/NS
@@ -83,14 +90,17 @@ class CheckpointBlob(models.Model):
     }
     messages and user_profile are channels.
 
-    A version = a snapshot identifier for one channel. They are used to reconstruct the full state at a checkpoint.
+    A version = a snapshot identifier for one channel. They are used to reconstruct
+    the full state at a checkpoint.
 
     Relationship to checkpoints:
-    - The row in checkpoints has something like: checkpoint.channel_versions = {"messages": "v5", "user_profile": "v2"}
+    - The row in checkpoints has something like: "
+    "checkpoint.channel_versions = {\"messages\": \"v5\", \"user_profile\": \"v2\"}
     - To reconstruct the full state at that checkpoint, LangGraph: looks up each
-    (thread_id, checkpoint_ns, channel, version) in checkpoint_blobs,deserializes the blobs, assembles them into the
-    channel state.
+    (thread_id, checkpoint_ns, channel, version) in checkpoint_blobs, "
+    "deserializes the blobs, assembles them into the channel state.
     """
+
     thread_id = models.TextField()
     checkpoint_ns = models.TextField(default="")
     channel = models.TextField()
@@ -108,9 +118,10 @@ class CheckpointBlob(models.Model):
 
 class CheckpointWrite(models.Model):
     """
-    Stores writes produced by tasks that are not yet consolidated into a new checkpoint, i.e. intermediate or pending
-    changes.
+    Stores writes produced by tasks that are not yet consolidated into a new checkpoint,
+    i.e. intermediate or pending changes.
     """
+
     thread_id = models.TextField()
     checkpoint_ns = models.TextField(default="")
     checkpoint_id = models.TextField()
@@ -133,11 +144,12 @@ class CacheEntry(models.Model):
     """
     LangGraph's cache table for storing cached values with TTL support.
 
-    LangGraph doesn't have a DB-based node cache implementation. But in some cases, especially when nodes are LLM calls,
-    it's possible to cache generated responses to avoid redundant LLM calls with the same exact context. It should be
-    done carefully to make sure the all the context of LLM calls is captured in the cache key, otherwise the cached
-    response will be incorrect and it'll be hard to debug. InMemoryCache or RedisCache can be used beside DB-based
-    caching.
+    LangGraph doesn't have a DB-based node cache implementation. But in some cases,
+    especially when nodes are LLM calls, it's possible to cache generated responses
+    to avoid redundant LLM calls with the same exact context. It should be done
+    carefully to make sure the all the context of LLM calls is captured in the cache
+    key, otherwise the cached response will be incorrect and it'll be hard to debug.
+    InMemoryCache or RedisCache can be used beside DB-based caching.
     """
 
     namespace = models.TextField()  # JSON-encoded namespace tuple
@@ -166,7 +178,7 @@ class CacheEntry(models.Model):
 
 
 class FlowQuerySet(models.QuerySet):
-    def for_user(self, user: User):
+    def for_user(self, user: "UserType"):
         """
         Filter flows by user.
 
@@ -211,7 +223,9 @@ class FlowQuerySet(models.QuerySet):
         Returns:
             FlowQuerySet: Filtered queryset (chainable)
         """
-        return self.filter(status__in=[Flow.STATUS_PENDING, Flow.STATUS_RUNNING, Flow.STATUS_INTERRUPTED])
+        return self.filter(
+            status__in=[Flow.STATUS_PENDING, Flow.STATUS_RUNNING, Flow.STATUS_INTERRUPTED]
+        )
 
     def by_recency(self):
         """
@@ -274,7 +288,7 @@ class FlowQuerySet(models.QuerySet):
 
         for field_path, expected_value in filters.items():
             # Navigate nested fields
-            current_value = state
+            current_value: Any = state
             for field in field_path.split("__"):
                 if isinstance(current_value, dict):
                     current_value = current_value.get(field)
@@ -308,13 +322,19 @@ class Flow(models.Model):
         (STATUS_CANCELLED, "Cancelled"),
     ]
 
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="flows", null=True, blank=True)
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="flows", null=True, blank=True
+    )
     app_name = models.CharField(max_length=255, help_text="Application name")
     flow_type = models.CharField(max_length=255, help_text="Type of the flow (i.e. graph name)")
-    graph_version = models.CharField(max_length=50, help_text="Version of the graph defining the flow")
+    graph_version = models.CharField(
+        max_length=50, help_text="Version of the graph defining the flow"
+    )
 
     # User-friendly fields
-    display_name = models.CharField(max_length=255, blank=True, null=True, help_text="User-friendly name for this flow")
+    display_name = models.CharField(
+        max_length=255, blank=True, null=True, help_text="User-friendly name for this flow"
+    )
     cover_image_url = models.URLField(null=True, blank=True, help_text="Image URL for this flow")
 
     status = models.CharField(max_length=255, default=STATUS_PENDING, choices=STATUS_CHOICES)
@@ -342,7 +362,7 @@ class Flow(models.Model):
     def cancel(self):
         """
         Cancel the flow (hard cancellation - cannot be resumed).
-        
+
         Raises:
             ValueError: If flow is already in a terminal state
         """
@@ -376,7 +396,7 @@ class Flow(models.Model):
 
                 # Extract interrupt data from checkpoint metadata and get current_node
                 current_node = None
-                
+
                 # First, try to get current_node from graph_state.tasks (for PostgreSQL backend)
                 if hasattr(graph_state, "tasks") and graph_state.tasks:
                     for task in graph_state.tasks:
@@ -384,9 +404,13 @@ class Flow(models.Model):
                             for interrupt in task.interrupts:
                                 # Extract node name from interrupt
                                 if current_node is None:
-                                    current_node = self._extract_current_node_name_from_interrupt(interrupt)
+                                    current_node = self._extract_current_node_name_from_interrupt(
+                                        interrupt
+                                    )
                                 # Merge interrupt value into state
-                                if hasattr(interrupt, "value") and isinstance(interrupt.value, dict):
+                                if hasattr(interrupt, "value") and isinstance(
+                                    interrupt.value, dict
+                                ):
                                     current_state.update(interrupt.value)
                                     break
 
@@ -400,12 +424,14 @@ class Flow(models.Model):
                         if isinstance(interrupt_data, list) and len(interrupt_data) > 0:
                             interrupt = interrupt_data[0]
                             current_node = self._extract_current_node_name_from_interrupt(interrupt)
-                    
+
                     # Fallback: try extracting from converted state
                     if current_node is None:
                         current_node = self._get_current_node_from_state(current_state)
 
-                current_state = self._prepare_state(current_state, skip_interrupt_extraction=True, current_node=current_node)
+                current_state = self._prepare_state(
+                    current_state, skip_interrupt_extraction=True, current_node=current_node
+                )
                 return current_state
             else:
                 return None
@@ -419,7 +445,7 @@ class Flow(models.Model):
         """
         try:
             current_state = self.state
-            
+
             # Handle None state
             if current_state is None:
                 return None
@@ -429,7 +455,7 @@ class Flow(models.Model):
         except Exception as e:
             logger.error(f"Error getting current node for flow {self.pk}: {e}", exc_info=True)
             return None
-    
+
     def _get_current_node_from_state(self, current_state):
         """
         Extract current node from a state dict without calling self.state.
@@ -517,7 +543,8 @@ class Flow(models.Model):
         Recursively convert Pydantic models to dictionaries.
         """
         if hasattr(data, "model_dump"):
-            # It's a Pydantic model, convert to dict with mode='python' to ensure proper serialization
+            # It's a Pydantic model, convert to dict with mode='python'
+            # to ensure proper serialization
             return data.model_dump(mode="python")
         elif isinstance(data, dict):
             # Convert all values in the dict
@@ -529,14 +556,17 @@ class Flow(models.Model):
             # Return as-is for primitive types
             return data
 
-    def _prepare_state(self, state, skip_interrupt_extraction=False, interrupt_only=False, current_node=None):
+    def _prepare_state(
+        self, state, skip_interrupt_extraction=False, interrupt_only=False, current_node=None
+    ):
         """
         Prepare the state for the flow.
 
         Args:
             state: The raw state from the graph
             skip_interrupt_extraction: If True, skip extracting interrupt from __interrupt__ key
-            interrupt_only: If True and there's an interrupt, return ONLY interrupt data (don't merge with full state)
+            interrupt_only: If True and there's an interrupt, return ONLY interrupt "
+            "data (don't merge with full state)
             current_node: Pre-computed current node (to avoid recursion)
         """
         # Check for interrupt and extract its value (only if not already extracted)
@@ -579,7 +609,11 @@ class Flow(models.Model):
             and not k.startswith("branch:to:")
             and not k.startswith("_")  # Remove internal fields with underscore prefix
             and k
-            not in ["user_id", "flow_id", "initial_input_received"]  # Remove flow-level and internal tracking fields
+            not in [
+                "user_id",
+                "flow_id",
+                "initial_input_received",
+            ]  # Remove flow-level and internal tracking fields
         }
 
         return cleaned_state

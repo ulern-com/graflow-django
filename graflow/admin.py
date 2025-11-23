@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils import timezone
 
-from graflow.models import Flow, Store, CacheEntry, Checkpoint, CheckpointBlob, CheckpointWrite
+from graflow.models import CacheEntry, Checkpoint, CheckpointBlob, CheckpointWrite, Flow, Store
 
 
 @admin.register(Store)
@@ -20,8 +20,8 @@ class StoreAdmin(admin.ModelAdmin):
             return False
         return timezone.now() >= obj.expires_at
 
-    is_expired.boolean = True
-    is_expired.short_description = "Expired"
+    is_expired.boolean = True  # type: ignore[attr-defined]
+    is_expired.short_description = "Expired"  # type: ignore[attr-defined]
 
     actions = ["cleanup_expired"]
 
@@ -30,7 +30,7 @@ class StoreAdmin(admin.ModelAdmin):
         expired_count = queryset.filter(expires_at__lte=timezone.now()).delete()[0]
         self.message_user(request, f"Cleaned up {expired_count} expired store entries.")
 
-    cleanup_expired.short_description = "Clean up expired entries"
+    cleanup_expired.short_description = "Clean up expired entries"  # type: ignore[attr-defined]
 
 
 @admin.register(Checkpoint)
@@ -74,8 +74,8 @@ class CheckpointBlobAdmin(admin.ModelAdmin):
         """Show if the blob has data."""
         return obj.blob is not None
 
-    has_blob.boolean = True
-    has_blob.short_description = "Has Blob"
+    has_blob.boolean = True  # type: ignore[attr-defined]
+    has_blob.short_description = "Has Blob"  # type: ignore[attr-defined]
 
     def has_add_permission(self, request):
         """Disable adding checkpoint blobs through admin."""
@@ -90,7 +90,16 @@ class CheckpointBlobAdmin(admin.ModelAdmin):
 class CheckpointWriteAdmin(admin.ModelAdmin):
     """Admin interface for LangGraph checkpoint writes."""
 
-    list_display = ("thread_id", "checkpoint_ns", "checkpoint_id", "task_id", "idx", "channel", "type", "has_blob")
+    list_display = (
+        "thread_id",
+        "checkpoint_ns",
+        "checkpoint_id",
+        "task_id",
+        "idx",
+        "channel",
+        "type",
+        "has_blob",
+    )
     list_filter = ("checkpoint_ns", "channel", "type")
     search_fields = ("thread_id", "checkpoint_id", "task_id", "channel")
     readonly_fields = (
@@ -110,8 +119,8 @@ class CheckpointWriteAdmin(admin.ModelAdmin):
         """Show if the blob has data."""
         return obj.blob is not None
 
-    has_blob.boolean = True
-    has_blob.short_description = "Has Blob"
+    has_blob.boolean = True  # type: ignore[attr-defined]
+    has_blob.short_description = "Has Blob"  # type: ignore[attr-defined]
 
     def has_add_permission(self, request):
         """Disable adding checkpoint writes through admin."""
@@ -135,8 +144,8 @@ class CacheEntryAdmin(admin.ModelAdmin):
         """Show if the cache entry is expired."""
         return obj.is_expired()
 
-    is_expired.boolean = True
-    is_expired.short_description = "Expired"
+    is_expired.boolean = True  # type: ignore[attr-defined]
+    is_expired.short_description = "Expired"  # type: ignore[attr-defined]
 
     def get_queryset(self, request):
         """Add expired filter."""
@@ -150,7 +159,7 @@ class CacheEntryAdmin(admin.ModelAdmin):
         expired_count = queryset.filter(expires_at__lte=timezone.now()).delete()[0]
         self.message_user(request, f"Cleaned up {expired_count} expired cache entries.")
 
-    cleanup_expired.short_description = "Clean up expired entries"
+    cleanup_expired.short_description = "Clean up expired entries"  # type: ignore[attr-defined]
 
 
 @admin.register(Flow)
@@ -168,8 +177,22 @@ class FlowAdmin(admin.ModelAdmin):
         "graph_version",
         "status",
     )
-    list_filter = ("created_at", "last_resumed_at", "app_name", "flow_type", "graph_version", "status")
-    search_fields = ("user__username", "user__email", "app_name", "flow_type", "graph_version", "status")
+    list_filter = (
+        "created_at",
+        "last_resumed_at",
+        "app_name",
+        "flow_type",
+        "graph_version",
+        "status",
+    )
+    search_fields = (
+        "user__username",
+        "user__email",
+        "app_name",
+        "flow_type",
+        "graph_version",
+        "status",
+    )
     readonly_fields = ("created_at", "last_resumed_at", "state")
     ordering = ("-last_resumed_at",)
 

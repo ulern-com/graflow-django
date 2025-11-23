@@ -1,7 +1,8 @@
 import inspect
 import json
 import logging
-from typing import Any, Callable, NamedTuple, Type, TypeVar
+from collections.abc import Callable
+from typing import Any, NamedTuple, TypeVar
 
 from django.conf import settings
 from langgraph.graph import StateGraph
@@ -21,7 +22,13 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
     Custom StateGraph for Graflow that provides common patterns and utilities for building flows.
     """
 
-    def __init__(self, state_schema: Type[StateT], flow_name: str, config_schema: Type[Any] | None = None, **kwargs):
+    def __init__(
+        self,
+        state_schema: type[StateT],
+        flow_name: str,
+        config_schema: type[Any] | None = None,
+        **kwargs,
+    ):
         super().__init__(state_schema, config_schema, **kwargs)
         self.flow_name = flow_name
 
@@ -33,7 +40,9 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
             .with_config({"run_name": self.flow_name})
         )
 
-    def add_node(self, func: Callable[..., Any], node_name: str = None, **kwargs) -> NamedTuple:
+    def add_node(  # type: ignore[override]
+        self, func: Callable[..., Any], node_name: str | None = None, **kwargs: Any
+    ) -> "FlowStateGraph[StateT]":
         """
         Add a node with automatic logging.
 
@@ -61,7 +70,7 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
                 raise
 
         super().add_node(node_name, wrapped_func, **kwargs)
-        return self
+        return self  # type: ignore[return-value]
 
     def add_llm_call_node(
         self, llm_func: Callable[..., Any], result_field: str | None = None, **node_kwargs
@@ -71,7 +80,8 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
 
         Args:
             llm_func: LLM function that takes specific parameters (not full state)
-            result_field: Field name to store the LLM result in the state (optional, inferred from the function name if not provided)
+            result_field: Field name to store the LLM result in the state "
+            "(optional, inferred from the function name if not provided)
             **node_kwargs: Additional node configuration
 
         Returns:
@@ -92,14 +102,16 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
                 if hasattr(state, param_name):
                     func_args.append(getattr(state, param_name))
                 else:
-                    raise ValueError(f"Field '{param_name}' not found in state for LLM function '{node_name}'")
+                    raise ValueError(
+                        f"Field '{param_name}' not found in state for LLM function '{node_name}'"
+                    )
 
             llm_result = llm_func(*func_args)
-            return {result_field: llm_result}
+            return {result_field: llm_result}  # type: ignore[return-value]
 
         # Add cache policy for LLM calls using function parameters as cache key
         # Use getattr with default to safely access settings
-        cache_ttl = getattr(settings, 'GRAFLOW_NODE_CACHE_TTL', 3600)
+        cache_ttl = getattr(settings, "GRAFLOW_NODE_CACHE_TTL", 3600)
 
         def create_cache_key_func(state: StateT):
             # Create a dict with the parameters for cache key
@@ -114,7 +126,7 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
         node_kwargs["cache_policy"] = cache_policy
 
         self.add_node(func=llm_wrapper, node_name=node_name, **node_kwargs)
-        return self
+        return self  # type: ignore[return-value]
 
     def add_data_receiver_node(
         self,
@@ -128,7 +140,8 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
 
         Args:
             required_fields: List of field names to request from the user
-            updated_fields: List of field names to send to the frontend along with the interrupt (optional)
+            updated_fields: List of field names to send to the frontend "
+            "along with the interrupt (optional)
             node_name: Node name (optional), if not provided, a default name will be generated
             **kwargs: Additional node configuration
 
@@ -215,7 +228,10 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
                 return False
 
         self.add_conditional_edges(
-            source_node_name, safe_condition_func, {True: true_node_name, False: false_node_name}, **kwargs
+            source_node_name,
+            safe_condition_func,
+            {True: true_node_name, False: false_node_name},
+            **kwargs,
         )
 
         if destination_node_name:
@@ -259,7 +275,10 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
                 return False
 
         self.add_conditional_edges(
-            loop_node_name, safe_condition_func, {True: repeat_node_name, False: destination_node_name}, **kwargs
+            loop_node_name,
+            safe_condition_func,
+            {True: repeat_node_name, False: destination_node_name},
+            **kwargs,
         )
         self.add_edge(repeat_node_name, loop_node_name)
         return self

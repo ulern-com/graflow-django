@@ -1,5 +1,5 @@
 import logging
-from typing import Callable, Type
+from collections.abc import Callable
 
 from django.conf import settings
 from langgraph.cache.memory import InMemoryCache
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 # Global registries
 _GRAPH_REGISTRY: dict[tuple[str, str, str], Callable[[], StateGraph]] = {}
-_GRAPH_STATE_REGISTRY: dict[tuple[str, str, str], Type[BaseModel]] = {}
+_GRAPH_STATE_REGISTRY: dict[tuple[str, str, str], type[BaseModel]] = {}
 _LATEST_VERSIONS: dict[tuple[str, str], str] = {}
 
 # Lazy initialization of persistence components
@@ -28,6 +28,7 @@ def _prepare_persistence():
     This function is defined here to avoid circular imports.
     """
     from dotenv import load_dotenv
+
     from graflow.storage.cache import DjangoCache
     from graflow.storage.checkpointer import DjangoSaver
     from graflow.storage.store import DjangoStore
@@ -45,7 +46,7 @@ def _get_persistence():
     global _node_cache, _checkpointer, _store
     if _node_cache is None or _checkpointer is None or _store is None:
         # Use getattr with default to safely access settings
-        persistence_backend = getattr(settings, 'GRAFLOW_PERSISTENCE_BACKEND', 'django')
+        persistence_backend = getattr(settings, "GRAFLOW_PERSISTENCE_BACKEND", "django")
         if persistence_backend == "django":
             _node_cache, _checkpointer, _store = _prepare_persistence()
         else:
@@ -76,7 +77,7 @@ def register_graph(
     flow_type: str,
     version: str,
     builder_func: Callable[[], StateGraph],
-    state_class: Type[BaseModel],
+    state_class: type[BaseModel],
     is_latest: bool = True,
 ):
     """
@@ -114,7 +115,7 @@ def get_latest_graph_version(flow_type: str, app_name: str) -> str | None:
     return _LATEST_VERSIONS.get(key, None)
 
 
-def get_graph(flow_type: str, app_name: str, version: str = None) -> StateGraph | None:
+def get_graph(flow_type: str, app_name: str, version: str | None = None) -> StateGraph | None:
     """
     Get the graph with the given name and version.
 
@@ -150,12 +151,14 @@ def get_graph(flow_type: str, app_name: str, version: str = None) -> StateGraph 
             )
             .with_config({"run_name": f"{app_name}_{flow_type}_{version}"})
         )
-        return graph
+        return graph  # type: ignore[return-value]
     except Exception as e:
-        raise ValueError(f"Error building graph {app_name}:{flow_type}:{version}: {e}")
+        raise ValueError(f"Error building graph {app_name}:{flow_type}:{version}: {e}") from e
 
 
-def get_graph_state_definition(flow_type: str, app_name: str, version: str = None) -> type[BaseModel] | None:
+def get_graph_state_definition(
+    flow_type: str, app_name: str, version: str | None = None
+) -> type[BaseModel] | None:
     """
     Get the graph state definition with the given name and version.
 
@@ -184,35 +187,35 @@ def get_graph_state_definition(flow_type: str, app_name: str, version: str = Non
 def _import_from_string(path: str):
     """
     Import a class or function from a string path.
-    
+
     Args:
         path: String in format "module.path:attribute"
-        
+
     Returns:
         The imported class or function
-        
+
     Raises:
         ValueError: If path format is invalid or import fails
     """
     try:
         module_path, attr_name = path.rsplit(":", 1)
-    except ValueError:
-        raise ValueError(f"Invalid path format '{path}'. Expected 'module.path:attribute'")
-    
+    except ValueError as e:
+        raise ValueError(f"Invalid path format '{path}'. Expected 'module.path:attribute'") from e
+
     try:
         module = __import__(module_path, fromlist=[attr_name])
         attr = getattr(module, attr_name)
         return attr
     except ImportError as e:
-        raise ValueError(f"Failed to import module '{module_path}': {e}")
-    except AttributeError:
-        raise ValueError(f"Module '{module_path}' has no attribute '{attr_name}'")
+        raise ValueError(f"Failed to import module '{module_path}': {e}") from e
+    except AttributeError as e:
+        raise ValueError(f"Module '{module_path}' has no attribute '{attr_name}'") from e
 
 
 def register_graphs_from_settings():
     """
     Register graphs defined in Django settings.
-    
+
     Expects GRAFLOW_GRAPHS setting to be a list of dictionaries, each containing:
         - app_name: Application name
         - flow_type: Flow type identifier
@@ -220,7 +223,7 @@ def register_graphs_from_settings():
         - builder: String path to builder function (e.g., "myapp.graphs:build_graph")
         - state: String path to state class (e.g., "myapp.graphs:GraphState")
         - is_latest: Boolean, whether this is the latest version (default: True)
-    
+
     Example:
         GRAFLOW_GRAPHS = [
             {
@@ -233,26 +236,26 @@ def register_graphs_from_settings():
             },
         ]
     """
-    graphs_config = getattr(settings, 'GRAFLOW_GRAPHS', [])
+    graphs_config = getattr(settings, "GRAFLOW_GRAPHS", [])
     if not graphs_config:
         return
-    
+
     registered = []
     errors = []
-    
+
     for config in graphs_config:
         try:
-            app_name = config['app_name']
-            flow_type = config['flow_type']
-            version = config['version']
-            builder_path = config['builder']
-            state_path = config['state']
-            is_latest = config.get('is_latest', True)
-            
+            app_name = config["app_name"]
+            flow_type = config["flow_type"]
+            version = config["version"]
+            builder_path = config["builder"]
+            state_path = config["state"]
+            is_latest = config.get("is_latest", True)
+
             # Import builder function and state class
             builder_func = _import_from_string(builder_path)
             state_class = _import_from_string(state_path)
-            
+
             # Register the graph
             register_graph(
                 app_name=app_name,
@@ -262,10 +265,10 @@ def register_graphs_from_settings():
                 state_class=state_class,
                 is_latest=is_latest,
             )
-            
+
             registered.append(f"{app_name}:{flow_type}:{version}")
             logger.info(f"Registered graph from settings: {app_name}:{flow_type}:{version}")
-            
+
         except KeyError as e:
             errors.append(f"Missing required key in graph config: {e}")
         except ValueError as e:
@@ -273,13 +276,18 @@ def register_graphs_from_settings():
         except Exception as e:
             errors.append(f"Error registering graph: {e}")
             logger.exception(f"Failed to register graph from config {config}")
-    
+
     if errors:
-        error_msg = "Errors registering graphs from settings:\n" + "\n".join(f"  - {e}" for e in errors)
+        error_msg = "Errors registering graphs from settings:\n" + "\n".join(
+            f"  - {e}" for e in errors
+        )
         logger.error(error_msg)
         # Raise if in strict mode, or just log in development
-        if getattr(settings, 'GRAFLOW_STRICT_GRAPH_REGISTRATION', False):
+        if getattr(settings, "GRAFLOW_STRICT_GRAPH_REGISTRATION", False):
             raise ValueError(error_msg)
-    
+
     if registered:
-        logger.info(f"Successfully registered {len(registered)} graph(s) from settings: {', '.join(registered)}")
+        logger.info(
+            f"Successfully registered {len(registered)} graph(s) from settings: "
+            f"{', '.join(registered)}"
+        )

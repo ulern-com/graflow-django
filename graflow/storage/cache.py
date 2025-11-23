@@ -2,7 +2,8 @@ import hashlib
 import json
 import threading
 from collections.abc import Mapping, Sequence
-from typing import Any, Dict, Optional
+from datetime import timedelta
+from typing import Any
 
 from django.utils import timezone
 from langgraph.cache.base import BaseCache, FullKey, Namespace, ValueT
@@ -12,6 +13,7 @@ from langgraph.checkpoint.serde.base import SerializerProtocol
 def _get_cache_entry_model():
     """Lazy import to avoid circular dependencies."""
     from graflow.models import CacheEntry
+
     return CacheEntry
 
 
@@ -90,7 +92,7 @@ class DjangoCache(BaseCache[ValueT]):
                 # Calculate expiry time
                 expires_at = None
                 if ttl is not None:
-                    expires_at = timezone.now() + timezone.timedelta(seconds=ttl)
+                    expires_at = timezone.now() + timedelta(seconds=ttl)
 
                 # Create or update the cache entry
                 CacheEntry = _get_cache_entry_model()
@@ -128,7 +130,7 @@ class DjangoCache(BaseCache[ValueT]):
         If no namespaces are provided, clear all cached values."""
         self.clear(namespaces)
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get cache statistics."""
         CacheEntry = _get_cache_entry_model()
         total_entries = CacheEntry.objects.count()
@@ -147,7 +149,7 @@ class DjangoCache(BaseCache[ValueT]):
             self._cleanup_expired()
 
 
-def create_cache_key(prefix: str, data: Optional[Dict[str, Any]] = None) -> str:
+def create_cache_key(prefix: str, data: dict[str, Any] | None = None) -> str:
     """
     Create a hashed cache key for any optional Python map.
 

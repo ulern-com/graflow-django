@@ -32,7 +32,10 @@ class Command(BaseCommand):
         parser.add_argument(
             "--output-dir",
             type=str,
-            help="Output directory for the visualization (defaults to MEDIA_ROOT/graph_visualizations)",
+            help=(
+                "Output directory for the visualization "
+                "(defaults to MEDIA_ROOT/graph_visualizations)"
+            ),
         )
         parser.add_argument(
             "--list",
@@ -64,7 +67,7 @@ class Command(BaseCommand):
 
             # Create output directory
             # Use getattr with default to safely access settings
-            media_root = getattr(settings, 'MEDIA_ROOT', './media')
+            media_root = getattr(settings, "MEDIA_ROOT", "./media")
             output_dir = options["output_dir"] or os.path.join(media_root, "graph_visualizations")
             os.makedirs(output_dir, exist_ok=True)
 
@@ -80,7 +83,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f"Graph visualization saved to: {output_path}"))
 
         except Exception as e:
-            raise CommandError(f"Error visualizing graph: {e}")
+            raise CommandError(f"Error visualizing graph: {e}") from e
 
     def list_available_graphs(self):
         """List all available graphs."""
@@ -107,7 +110,9 @@ class Command(BaseCommand):
                 self.stdout.write(ascii_output)
             except Exception as e:
                 # Fallback to simple text if ASCII fails
-                self.stdout.write(self.style.WARNING(f"ASCII generation failed: {e}. Using simple text."))
+                self.stdout.write(
+                    self.style.WARNING(f"ASCII generation failed: {e}. Using simple text.")
+                )
                 self.create_simple_text_visualization(graph, graph_name, version, output_path)
         else:
             # Use LangGraph's Mermaid PNG visualization
@@ -118,8 +123,10 @@ class Command(BaseCommand):
             except Exception as e:
                 # If PNG generation fails, raise an error
                 raise CommandError(
-                    f"PNG generation failed: {e}. This graph has cache key issues that prevent LangGraph visualization. Try using --format ascii for text output."
-                )
+                    f"PNG generation failed: {e}. This graph has cache key issues "
+                    f"that prevent LangGraph visualization. "
+                    f"Try using --format ascii for text output."
+                ) from e
 
         return output_path
 

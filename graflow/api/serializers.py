@@ -11,25 +11,30 @@ class FlowCreateSerializer(Serializer):
 
     flow_type = serializers.CharField(
         required=True,
-        help_text="The type of flow to create (e.g., 'hello_world'). Must be a registered flow type."
+        help_text=(
+            "The type of flow to create (e.g., 'hello_world'). " "Must be a registered flow type."
+        ),
     )
     state = serializers.DictField(
         required=False,
         allow_null=True,
-        help_text="Optional initial state for the flow. Structure depends on the flow_type's state definition."
+        help_text=(
+            "Optional initial state for the flow. "
+            "Structure depends on the flow_type's state definition."
+        ),
     )
     display_name = serializers.CharField(
         required=False,
         allow_null=True,
         allow_blank=True,
         max_length=255,
-        help_text="User-friendly display name for the flow."
+        help_text="User-friendly display name for the flow.",
     )
     cover_image_url = serializers.URLField(
         required=False,
         allow_null=True,
         allow_blank=True,
-        help_text="Optional cover image URL for the flow."
+        help_text="Optional cover image URL for the flow.",
     )
 
 
@@ -55,7 +60,9 @@ class FlowStateSerializer(Serializer):
             graph_state = graph_state_definition(**data)
             return graph_state
         except Exception as e:
-            raise serializers.ValidationError({"non_field_errors": [f"Invalid input state: {str(e)}"]})
+            raise serializers.ValidationError(
+                {"non_field_errors": [f"Invalid input state: {str(e)}"]}
+            ) from e
 
     def to_representation(self, instance):
         # instance may be a Pydantic BaseModel, a plain dict from LangGraph, or a dataclass-like
@@ -78,7 +85,9 @@ class FlowStateSerializer(Serializer):
                 return convert(instance)
             return instance
         except Exception as e:
-            raise serializers.ValidationError({"non_field_errors": [f"Invalid output state: {str(e)}"]})
+            raise serializers.ValidationError(
+                {"non_field_errors": [f"Invalid output state: {str(e)}"]}
+            ) from e
 
 
 class FlowListSerializer(ModelSerializer):
@@ -167,10 +176,10 @@ class FlowResumeSerializer(Serializer):
     """
     Serializer for resuming a flow with updated state.
     The state structure depends on the flow type's state definition.
-    
+
     This accepts any dictionary structure. The actual state validation happens
     at runtime against the specific flow type's state schema.
-    
+
     Example states vary by flow type:
     - For hello_world: {"message": "Hello"}
     - For other flows: {"counter": 5, "branch_choice": "right"}
@@ -182,7 +191,10 @@ class FlowResumeSerializer(Serializer):
     state = serializers.DictField(
         required=True,
         allow_empty=False,
-        help_text="State dictionary matching the flow type's state schema. Structure varies by flow_type.",
+        help_text=(
+            "State dictionary matching the flow type's state schema. "
+            "Structure varies by flow_type."
+        ),
     )
 
 
@@ -194,7 +206,10 @@ class FlowStatsSerializer(Serializer):
     total = serializers.IntegerField(help_text="Total number of flows")
     by_status = serializers.DictField(
         child=serializers.IntegerField(),
-        help_text="Count of flows grouped by status (pending, running, interrupted, completed, failed, cancelled)",
+        help_text=(
+            "Count of flows grouped by status "
+            "(pending, running, interrupted, completed, failed, cancelled)"
+        ),
     )
     by_type = serializers.DictField(
         child=serializers.IntegerField(),

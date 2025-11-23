@@ -1,4 +1,3 @@
-from factory import Faker, SubFactory
 from factory.django import DjangoModelFactory
 
 from graflow.models import Flow

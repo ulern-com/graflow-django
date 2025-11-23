@@ -3,16 +3,15 @@ Django-specific PostgreSQL store that uses Django database settings.
 """
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from typing import Any, Callable, Optional, Union
+from typing import Any, cast
 from urllib.parse import quote_plus
 
-import orjson
 from django.conf import settings
 from langgraph.store.postgres import PostgresStore
 from langgraph.store.postgres.base import PostgresIndexConfig, TTLConfig
-from psycopg import Connection
+from psycopg import Connection, Pipeline
 from psycopg.rows import dict_row
 
 logger = logging.getLogger(__name__)
@@ -31,9 +30,9 @@ class DjangoStore(PostgresStore):
         self,
         *,
         pipeline: bool = False,
-        deserializer: Optional[Callable[[Union[bytes, orjson.Fragment]], dict[str, Any]]] = None,
-        index: Optional[PostgresIndexConfig] = None,
-        ttl: Optional[TTLConfig] = None,
+        deserializer: Callable[[bytes], dict[str, Any]] | None = None,
+        index: PostgresIndexConfig | None = None,
+        ttl: TTLConfig | None = None,
     ) -> None:
         """
         Initialize DjangoStore with Django database settings.
@@ -53,13 +52,13 @@ class DjangoStore(PostgresStore):
             raise ValueError("DjangoStore only supports PostgreSQL databases")
 
         # Build connection string from Django settings
-        user = db_settings["USER"]
-        host = db_settings["HOST"] or "localhost"
-        port = db_settings["PORT"] or "5432"
-        name = db_settings["NAME"]
+        user = cast(str, db_settings["USER"])
+        host = cast(str, db_settings.get("HOST") or "localhost")
+        port = cast(str, db_settings.get("PORT") or "5432")
+        name = cast(str, db_settings["NAME"])
 
         if host.startswith("/"):  # Unix socket path (e.g., /cloudsql/...)
-            password = db_settings["PASSWORD"]
+            password = cast(str, db_settings.get("PASSWORD") or "")
             self.conn = Connection.connect(
                 dbname=name,
                 user=user,
@@ -70,18 +69,23 @@ class DjangoStore(PostgresStore):
                 row_factory=dict_row,
             )
         else:
-            password = quote_plus(db_settings["PASSWORD"])  # URL-encode password
+            password = quote_plus(
+                cast(str, db_settings.get("PASSWORD") or "")
+            )  # URL-encode password
             # Add SSL mode if specified
-            ssl_mode = db_settings.get("OPTIONS", {}).get("sslmode", "disable")
+            options = cast(dict[str, Any], db_settings.get("OPTIONS", {}))
+            ssl_mode = cast(str, options.get("sslmode", "disable"))
             conn_string = f"postgresql://{user}:{password}@{host}:{port}/{name}?sslmode={ssl_mode}"
 
             # Create connection
-            self.conn = Connection.connect(conn_string, autocommit=True, prepare_threshold=0, row_factory=dict_row)
+            self.conn = Connection.connect(
+                conn_string, autocommit=True, prepare_threshold=0, row_factory=dict_row
+            )
 
         # Initialize pipeline if requested
-        self.pipe = None
+        self.pipe: Pipeline | None = None
         if pipeline:
-            self.pipe = self.conn.pipeline()
+            self.pipe = self.conn.pipeline()  # type: ignore[assignment]
 
         # Call parent constructor
         super().__init__(self.conn, pipe=self.pipe, deserializer=deserializer, index=index, ttl=ttl)
@@ -92,9 +96,9 @@ class DjangoStore(PostgresStore):
         cls,
         *,
         pipeline: bool = False,
-        deserializer: Optional[Callable[[Union[bytes, orjson.Fragment]], dict[str, Any]]] = None,
-        index: Optional[PostgresIndexConfig] = None,
-        ttl: Optional[TTLConfig] = None,
+        deserializer: Callable[[bytes], dict[str, Any]] | None = None,
+        index: PostgresIndexConfig | None = None,
+        ttl: TTLConfig | None = None,
     ) -> Iterator["DjangoStore"]:
         """
         Create a DjangoStore instance using Django database settings.
@@ -113,14 +117,15 @@ class DjangoStore(PostgresStore):
             yield store
         finally:
             if store.pipe:
-                store.pipe.close()
+                store.pipe.close()  # type: ignore[attr-defined]
             store.conn.close()
 
     def setup(self) -> None:
         """
         Do nothing.
 
-        NOTE: There is no need to call setup() of the parent class because we are using Django migrations.
+        NOTE: There is no need to call setup() of the parent class because we are
+        using Django migrations.
         """
         pass
 
@@ -131,5 +136,5 @@ class DjangoStore(PostgresStore):
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         """Context manager exit."""
         if self.pipe:
-            self.pipe.close()
+            self.pipe.close()  # type: ignore[attr-defined]
         self.conn.close()

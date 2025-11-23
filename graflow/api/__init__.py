@@ -20,6 +20,7 @@ def __getattr__(name):
             FlowListSerializer,
             FlowStateSerializer,
         )
+
         return {
             "FlowDetailSerializer": FlowDetailSerializer,
             "FlowListSerializer": FlowListSerializer,
@@ -27,12 +28,13 @@ def __getattr__(name):
         }[name]
     elif name in ("FlowCreationThrottle", "FlowResumeThrottle"):
         from graflow.api.throttling import FlowCreationThrottle, FlowResumeThrottle
+
         return {
             "FlowCreationThrottle": FlowCreationThrottle,
             "FlowResumeThrottle": FlowResumeThrottle,
         }[name]
     elif name == "FlowViewSet":
         from graflow.api.views import FlowViewSet
+
         return FlowViewSet
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-

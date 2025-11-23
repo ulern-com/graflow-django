@@ -5,15 +5,15 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from graflow.models import Flow
 from graflow.graphs.registry import register_graph
+from graflow.models import Flow
+from graflow.tests.factories import FlowFactory
 from graflow.tests.fixtures.test_graph import (
     MinimalTestState,
     TestGraphState,
     build_minimal_test_graph,
     build_test_graph,
 )
-from graflow.tests.factories import FlowFactory
 
 User = get_user_model()
 
@@ -26,13 +26,23 @@ class FlowsAPITest(APITestCase):
         """Set up test data once for all tests."""
         # Register test graphs with multiple names for compatibility
         register_graph("test_app", "test_graph", "v1", build_test_graph, TestGraphState)
-        register_graph("test_app", "test_flow", "v1", build_test_graph, TestGraphState)  # Alias for tests
-        register_graph("test_app", "minimal_test_graph", "v1", build_minimal_test_graph, MinimalTestState)
-        register_graph("test_app", "minimal_test_flow", "v1", build_minimal_test_graph, MinimalTestState)  # Alias for tests
+        register_graph(
+            "test_app", "test_flow", "v1", build_test_graph, TestGraphState
+        )  # Alias for tests
+        register_graph(
+            "test_app", "minimal_test_graph", "v1", build_minimal_test_graph, MinimalTestState
+        )
+        register_graph(
+            "test_app", "minimal_test_flow", "v1", build_minimal_test_graph, MinimalTestState
+        )  # Alias for tests
 
         # Create test users
-        cls.user1 = User.objects.create_user(email="user1@test.com", username="user1", password="testpass123")
-        cls.user2 = User.objects.create_user(email="user2@test.com", username="user2", password="testpass123")
+        cls.user1 = User.objects.create_user(
+            email="user1@test.com", username="user1", password="testpass123"
+        )
+        cls.user2 = User.objects.create_user(
+            email="user2@test.com", username="user2", password="testpass123"
+        )
 
     def setUp(self):
         """Set up each test."""
@@ -70,7 +80,9 @@ class FlowsAPITest(APITestCase):
         # Verify graph executed - should have messages showing execution
         self.assertIn("messages", state)
         self.assertIsInstance(state["messages"], list)
-        self.assertGreater(len(state["messages"]), 0, "Graph should have executed and generated messages")
+        self.assertGreater(
+            len(state["messages"]), 0, "Graph should have executed and generated messages"
+        )
 
     def test_create_flow_with_nested_state(self):
         """Test creating flow with nested state data."""
@@ -105,7 +117,8 @@ class FlowsAPITest(APITestCase):
         response = self.client.post(url, {}, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("flow_type is required", str(response.data))
+        self.assertIn("flow_type", str(response.data))
+        self.assertIn("required", str(response.data))
 
     def test_create_flow_without_state(self):
         """Test creating flow without initial state - should interrupt for input."""
@@ -277,25 +290,32 @@ class FlowsAPITest(APITestCase):
         self.assertNotIn("user_id", response.data, "user_id should be removed from state")
         self.assertNotIn("flow_id", response.data, "flow_id should be removed from state")
 
-        # Verify the graph executed by checking database state (not response, since interrupt responses
-        # may only contain interrupt data, not full state)
+        # Verify the graph executed by checking database state (not response, "
+        # since interrupt responses may only contain interrupt data, not full state)
         flow.refresh_from_db()
         final_counter = flow.state.get("counter", 0)
         final_messages_count = len(flow.state.get("messages", []))
 
         # Verify that execution happened by checking messages increased OR counter changed
-        # (counter might decrease if loop completes and resets, but messages should always accumulate)
-        execution_happened = final_messages_count > initial_messages_count or final_counter != initial_counter
+        # (counter might decrease if loop completes and resets, "
+        # but messages should always accumulate)
+        execution_happened = (
+            final_messages_count > initial_messages_count or final_counter != initial_counter
+        )
         self.assertTrue(
             execution_happened,
-            f"Execution should have happened: messages {initial_messages_count}->{final_messages_count}, counter {initial_counter}->{final_counter}",
+            f"Execution should have happened: messages "
+            f"{initial_messages_count}->{final_messages_count}, "
+            f"counter {initial_counter}->{final_counter}",
         )
 
         # If we got here, execution happened. Verify response structure is valid
         self.assertIsInstance(response.data, dict)
 
         # Flow may interrupt again at next checkpoint since it's in a loop, or complete
-        self.assertIn(flow.status, ["completed", "interrupted"], "Flow should be completed or interrupted")
+        self.assertIn(
+            flow.status, ["completed", "interrupted"], "Flow should be completed or interrupted"
+        )
 
     def test_resume_flow_with_pause(self):
         """Test resuming an interrupted flow."""
@@ -336,7 +356,9 @@ class FlowsAPITest(APITestCase):
 
         url = reverse("graflow:flow-resume", kwargs={"pk": flow.id})
         # Resume with updated state - branch_choice should be reflected
-        response = self.client.post(url, {"branch_choice": "right", "should_pause": True}, format="json")
+        response = self.client.post(
+            url, {"branch_choice": "right", "should_pause": True}, format="json"
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         # Verify state was updated
@@ -356,7 +378,9 @@ class FlowsAPITest(APITestCase):
         flow.resume({"user_id": self.user1.id, "flow_id": flow.id})
         # Second resume: Provide state with should_pause to keep it interrupted
         # Note: counter=42 becomes 43 after increment node runs
-        flow.resume({"user_id": self.user1.id, "flow_id": flow.id, "counter": 42, "should_pause": True})
+        flow.resume(
+            {"user_id": self.user1.id, "flow_id": flow.id, "counter": 42, "should_pause": True}
+        )
 
         url = reverse("graflow:flow-list") + "?flow_type=test_flow&state__counter=43"
         response = self.client.get(url)
@@ -372,10 +396,19 @@ class FlowsAPITest(APITestCase):
         flow.resume({"user_id": self.user1.id, "flow_id": flow.id})
         # Second resume: Counter gets incremented before pause, so 42 becomes 43
         flow.resume(
-            {"user_id": self.user1.id, "flow_id": flow.id, "counter": 42, "branch_choice": "left", "should_pause": True}
+            {
+                "user_id": self.user1.id,
+                "flow_id": flow.id,
+                "counter": 42,
+                "branch_choice": "left",
+                "should_pause": True,
+            }
         )
 
-        url = reverse("graflow:flow-list") + "?flow_type=test_flow&state__counter=43&state__branch_choice=left"
+        url = (
+            reverse("graflow:flow-list")
+            + "?flow_type=test_flow&state__counter=43&state__branch_choice=left"
+        )
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -416,7 +449,8 @@ class FlowsAPITest(APITestCase):
         flow = FlowFactory.create(user=self.user1)
         # First resume: Initialize (will interrupt)
         flow.resume({"user_id": self.user1.id, "flow_id": flow.id})
-        # Second resume: Set counter to 10, after increment it becomes 11, and branch_right multiplies by 2 = 22
+        # Second resume: Set counter to 10, after increment it becomes 11, "
+        # and branch_right multiplies by 2 = 22
         flow.resume(
             {
                 "user_id": self.user1.id,
@@ -447,7 +481,9 @@ class FlowsAPITest(APITestCase):
         # First resume: Initialize (will interrupt)
         flow.resume({"user_id": self.user1.id, "flow_id": flow.id})
         # Second resume: Counter gets incremented, so 42 becomes 43
-        flow.resume({"user_id": self.user1.id, "flow_id": flow.id, "counter": 42, "should_pause": True})
+        flow.resume(
+            {"user_id": self.user1.id, "flow_id": flow.id, "counter": 42, "should_pause": True}
+        )
 
         url = reverse("graflow:flow-list") + "?flow_type=test_flow&state__counter=43"
         response = self.client.get(url)
@@ -473,7 +509,9 @@ class FlowsAPITest(APITestCase):
         # First resume: Initialize (will interrupt)
         flow2.resume({"user_id": self.user2.id, "flow_id": flow2.id})
         # Second resume: Provide state with should_pause to keep it interrupted
-        flow2.resume({"user_id": self.user2.id, "flow_id": flow2.id, "counter": 42, "should_pause": True})
+        flow2.resume(
+            {"user_id": self.user2.id, "flow_id": flow2.id, "counter": 42, "should_pause": True}
+        )
 
         # User1 queries for same counter value
         url = reverse("graflow:flow-list") + "?flow_type=test_flow&state__counter=42"
@@ -488,7 +526,9 @@ class FlowsAPITest(APITestCase):
         # First resume: Initialize (will interrupt)
         flow.resume({"user_id": self.user1.id, "flow_id": flow.id})
         # Second resume: Counter gets incremented, so 42 becomes 43
-        flow.resume({"user_id": self.user1.id, "flow_id": flow.id, "counter": 42, "should_pause": True})
+        flow.resume(
+            {"user_id": self.user1.id, "flow_id": flow.id, "counter": 42, "should_pause": True}
+        )
 
         # Query with string version of int (43 after increment)
         url = reverse("graflow:flow-list") + "?flow_type=test_flow&state__counter=43"
@@ -515,13 +555,22 @@ class FlowsAPITest(APITestCase):
 
     def test_unauthenticated_access(self):
         """Test that unauthenticated users cannot access the API."""
-        self.client.force_authenticate(user=None)
+        from django.conf import settings
 
-        url = reverse("graflow:flow-list")
-        response = self.client.get(url)
+        # Override setting to require authentication for this test
+        original_setting = getattr(settings, "GRAFLOW_REQUIRE_AUTHENTICATION", True)
+        settings.GRAFLOW_REQUIRE_AUTHENTICATION = True
 
-        # DRF returns 403 Forbidden (not 401) when authentication is required but not provided
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        try:
+            self.client.force_authenticate(user=None)
+
+            url = reverse("graflow:flow-list")
+            response = self.client.get(url)
+
+            # DRF returns 403 Forbidden (not 401) when authentication is required but not provided
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        finally:
+            settings.GRAFLOW_REQUIRE_AUTHENTICATION = original_setting
 
     def test_closed_flow_not_in_list(self):
         """Test that cancelled flows are not returned in list."""
@@ -540,7 +589,9 @@ class FlowsAPITest(APITestCase):
         # First resume: Initialize (will interrupt)
         flow.resume({"user_id": self.user1.id, "flow_id": flow.id})
         # Second resume: Provide state with should_pause
-        flow.resume({"user_id": self.user1.id, "flow_id": flow.id, "counter": 42, "should_pause": True})
+        flow.resume(
+            {"user_id": self.user1.id, "flow_id": flow.id, "counter": 42, "should_pause": True}
+        )
         # Cancel the flow
         flow.cancel()
 
@@ -597,8 +648,6 @@ class FlowsAPITest(APITestCase):
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]["status"], "interrupted")
 
-
-
     def test_list_flows_filter_by_status_completed(self):
         """Test listing flows filtered by completed status."""
         # Create completed flow
@@ -614,9 +663,9 @@ class FlowsAPITest(APITestCase):
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]["status"], "completed")
 
-
     def test_list_flows_filter_by_status_cancelled(self):
-        """Test listing flows filtered by cancelled status - cancelled flows are excluded from queryset."""
+        """Test listing flows filtered by cancelled status - "
+        "cancelled flows are excluded from queryset."""
         flow = FlowFactory.create(user=self.user1)
         flow.cancel()
 
@@ -681,7 +730,8 @@ class FlowsAPITest(APITestCase):
         self.assertIn("error", response.data)
 
     def test_cancel_action_on_already_cancelled_flow(self):
-        """Test cancel action on already cancelled flow - returns 404 since cancelled flows are excluded."""
+        """Test cancel action on already cancelled flow - returns 404 "
+        "since cancelled flows are excluded."""
         flow = FlowFactory.create(user=self.user1)
         flow.cancel()
 
@@ -806,8 +856,12 @@ class FlowsAPITest(APITestCase):
         # Verify counts - cancelled flows are excluded from queryset
         # Check that counts increased by at least the expected amounts (accounting for other tests)
         # Note: flow2 might not complete immediately, so we check for at least the interrupted flow
-        self.assertGreaterEqual(response.data["total"], initial_total + 1)  # At least flow1, flow3 excluded
-        self.assertGreaterEqual(response.data["by_status"]["interrupted"], initial_interrupted + 1)  # flow1
+        self.assertGreaterEqual(
+            response.data["total"], initial_total + 1
+        )  # At least flow1, flow3 excluded
+        self.assertGreaterEqual(
+            response.data["by_status"]["interrupted"], initial_interrupted + 1
+        )  # flow1
         # flow2 might complete or stay interrupted depending on graph execution
         self.assertGreaterEqual(
             response.data["by_status"]["completed"], initial_completed
@@ -816,7 +870,9 @@ class FlowsAPITest(APITestCase):
 
         # Verify by_type - cancelled flow is excluded
         # At least flow1 should be counted (flow2 might not complete)
-        self.assertGreaterEqual(response.data["by_type"]["test_flow"], initial_test_flow + 1)  # At least flow1
+        self.assertGreaterEqual(
+            response.data["by_type"]["test_flow"], initial_test_flow + 1
+        )  # At least flow1
         # minimal_test_graph flow was cancelled, so it's excluded from stats
         self.assertNotIn("minimal_test_flow", response.data["by_type"])
 
@@ -865,7 +921,9 @@ class FlowsAPITest(APITestCase):
         # Create interrupted flow with specific state
         flow = FlowFactory.create(user=self.user1)
         flow.resume({"user_id": self.user1.id, "flow_id": flow.id})
-        flow.resume({"user_id": self.user1.id, "flow_id": flow.id, "counter": 42, "should_pause": True})
+        flow.resume(
+            {"user_id": self.user1.id, "flow_id": flow.id, "counter": 42, "should_pause": True}
+        )
 
         # Filter by status=interrupted AND state__counter=43
         url = reverse("graflow:flow-list") + "?flow_type=test_flow&state__counter=43"
@@ -883,9 +941,15 @@ class FlowTypesAPITest(APITestCase):
     def setUpTestData(cls):
         register_graph("test_app", "test_graph", "v1", build_test_graph, TestGraphState)
         register_graph("test_app", "test_flow", "v1", build_test_graph, TestGraphState)
-        register_graph("test_app", "minimal_test_graph", "v1", build_minimal_test_graph, MinimalTestState)
-        register_graph("test_app", "minimal_test_flow", "v1", build_minimal_test_graph, MinimalTestState)
-        cls.user = User.objects.create_user(email="flowtypes@test.com", username="flowtypes", password="testpass123")
+        register_graph(
+            "test_app", "minimal_test_graph", "v1", build_minimal_test_graph, MinimalTestState
+        )
+        register_graph(
+            "test_app", "minimal_test_flow", "v1", build_minimal_test_graph, MinimalTestState
+        )
+        cls.user = User.objects.create_user(
+            email="flowtypes@test.com", username="flowtypes", password="testpass123"
+        )
 
     def setUp(self):
         self.client.force_authenticate(user=self.user)
@@ -895,8 +959,17 @@ class FlowTypesAPITest(APITestCase):
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Filter to only test_app graphs (ignore graphs from settings like myflows)
+        test_app_graphs = [
+            item
+            for item in response.data
+            if item["app_name"] == "test_app"
+        ]
         self.assertEqual(
-            sorted(response.data, key=lambda item: (item["app_name"], item["flow_type"], item["version"])),
+            sorted(
+                test_app_graphs,
+                key=lambda item: (item["app_name"], item["flow_type"], item["version"]),
+            ),
             [
                 {"app_name": "test_app", "flow_type": "minimal_test_flow", "version": "v1"},
                 {"app_name": "test_app", "flow_type": "minimal_test_graph", "version": "v1"},
@@ -906,8 +979,17 @@ class FlowTypesAPITest(APITestCase):
         )
 
     def test_requires_authentication(self):
-        self.client.force_authenticate(user=None)
-        url = reverse("graflow:flow-type-list")
-        response = self.client.get(url)
+        from django.conf import settings
 
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        # Override setting to require authentication for this test
+        original_setting = getattr(settings, "GRAFLOW_REQUIRE_AUTHENTICATION", True)
+        settings.GRAFLOW_REQUIRE_AUTHENTICATION = True
+
+        try:
+            self.client.force_authenticate(user=None)
+            url = reverse("graflow:flow-type-list")
+            response = self.client.get(url)
+
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        finally:
+            settings.GRAFLOW_REQUIRE_AUTHENTICATION = original_setting

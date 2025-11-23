@@ -161,7 +161,9 @@ class FlowStateGraphTest(TestCase):
         graph.add_edge(START, "mock_llm")
         graph.add_edge("mock_llm", END)
 
-        result = graph.compile().invoke({"topic": "Python", "level": "beginner"}, config=self.config)
+        result = graph.compile().invoke(
+            {"topic": "Python", "level": "beginner"}, config=self.config
+        )
 
         self.assertEqual(result["result"], "Result: Python at beginner")
 
@@ -215,13 +217,15 @@ class FlowStateGraphTest(TestCase):
         # Since TestState has topic as Field with default="", it exists in state
         # We need to test the actual behavior: if topic exists but is empty, default is used
         # But our implementation passes whatever is in state, so empty string is passed
-        # This test needs to verify that if topic is actually missing (not just empty), it uses default
+        # This test needs to verify that if topic is actually missing (not just empty),
+        # it uses default
         # However, our current implementation doesn't check for defaults in function signature
         # So we test the actual behavior: empty string is passed
         result = graph.compile().invoke({"topic": "custom"}, config=self.config)
         self.assertEqual(result["result"], "Topic: custom")
 
-        # When topic is empty string, it gets passed as is (no default handling in our implementation)
+        # When topic is empty string, it gets passed as is "
+        # (no default handling in our implementation)
         result2 = graph.compile().invoke({"topic": ""}, config=self.config)
         self.assertEqual(result2["result"], "Topic: ")
 
@@ -383,7 +387,9 @@ class FlowStateGraphTest(TestCase):
 
         graph.add_edge(START, "process")
         graph.add_if_statement(
-            source_node_name="process", condition_func=lambda state: state.counter > 0, true_node_name="true_action"
+            source_node_name="process",
+            condition_func=lambda state: state.counter > 0,
+            true_node_name="true_action",
         )
         graph.add_edge("true_action", END)
         graph.add_edge("skip_true_action", END)

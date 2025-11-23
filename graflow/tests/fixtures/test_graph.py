@@ -8,6 +8,8 @@ This graph includes:
 - Nested state for query testing
 """
 
+from typing import Any
+
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
@@ -22,7 +24,7 @@ _test_checkpointer = MemorySaver()
 
 class TestGraphState(BaseGraphState):  # noqa: N801
     """State for test graph with various features."""
-    
+
     __test__ = False  # Tell pytest not to collect this as a test class
 
     counter: int = Field(default=0, description="Counter for loops")
@@ -31,7 +33,9 @@ class TestGraphState(BaseGraphState):  # noqa: N801
     nested_data: dict = Field(default_factory=dict, description="Nested data for query tests")
     should_pause: bool = Field(default=False, description="Whether to pause at checkpoint")
     messages: list[str] = Field(default_factory=list, description="Message log for tracking flow")
-    initial_input_received: bool = Field(default=False, description="Internal: tracks if user provided initial input")
+    initial_input_received: bool = Field(
+        default=False, description="Internal: tracks if user provided initial input"
+    )
 
 
 def node_initialize(state: TestGraphState) -> dict:
@@ -46,7 +50,7 @@ def node_initialize(state: TestGraphState) -> dict:
         return interrupt({"initial_input_received": True})
 
     # Real initialization after user provides input (or on second resume)
-    update = {"messages": state.messages + ["initialized"]}
+    update: dict[str, Any] = {"messages": state.messages + ["initialized"]}
     if state.counter == 0 and not state.messages:  # Default value, not explicitly set
         update["counter"] = 0
     return update
@@ -127,7 +131,9 @@ def build_test_graph() -> StateGraph:
     # Add edges
     graph.add_edge(START, "initialize")
     graph.add_edge("initialize", "increment")
-    graph.add_conditional_edges("increment", decide_branch, {"left": "branch_left", "right": "branch_right"})
+    graph.add_conditional_edges(
+        "increment", decide_branch, {"left": "branch_left", "right": "branch_right"}
+    )
     graph.add_edge("branch_left", "checkpoint")
     graph.add_edge("branch_right", "checkpoint")
     graph.add_edge("checkpoint", "loop_check")

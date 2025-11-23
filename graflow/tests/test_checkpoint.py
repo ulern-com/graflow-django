@@ -10,8 +10,8 @@ class DjangoSaverTest(TestCase):
     def setUp(self):
         """Set up test data."""
         # Skip if not using PostgreSQL
-        db_engine = settings.DATABASES['default']['ENGINE']
-        if 'postgresql' not in db_engine:
+        db_engine = settings.DATABASES["default"]["ENGINE"]
+        if "postgresql" not in db_engine:
             self.skipTest(f"Test requires PostgreSQL, but using {db_engine}")
         self.saver = DjangoSaver()
 
