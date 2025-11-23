@@ -32,7 +32,7 @@ test:
 
 # Run tests with coverage
 test-cov:
-    pytest --cov=graflow --cov=myflows --cov-report=html --cov-report=term
+    pytest --cov=graflow --cov-report=html --cov-report=term
 
 # Clean up temporary files
 clean:

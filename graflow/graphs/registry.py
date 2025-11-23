@@ -1,4 +1,5 @@
 import logging
+from dotenv import load_dotenv
 from collections.abc import Callable
 
 from django.conf import settings
@@ -7,6 +8,10 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph
 from langgraph.store.memory import InMemoryStore
 from pydantic import BaseModel
+
+from graflow.storage.cache import DjangoCache
+from graflow.storage.checkpointer import DjangoSaver
+from graflow.storage.store import DjangoStore
 
 logger = logging.getLogger(__name__)
 
@@ -27,12 +32,6 @@ def _prepare_persistence():
     Prepare the persistence for the graph.
     This function is defined here to avoid circular imports.
     """
-    from dotenv import load_dotenv
-
-    from graflow.storage.cache import DjangoCache
-    from graflow.storage.checkpointer import DjangoSaver
-    from graflow.storage.store import DjangoStore
-
     load_dotenv()
 
     node_cache = DjangoCache()
