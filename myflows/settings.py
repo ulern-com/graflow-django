@@ -173,4 +173,12 @@ GRAFLOW_GRAPHS = [
         "state": "myflows.graphs.hello_world:HelloWorldState",  # module.path:class_name
         "is_latest": True,
     },
+    {
+        "app_name": "myflows",
+        "flow_type": "interactive_demo",
+        "version": "v1",
+        "builder": "myflows.graphs.interactive_demo:build_interactive_demo_graph",
+        "state": "myflows.graphs.interactive_demo:InteractiveDemoState",
+        "is_latest": True,
+    },
 ]
