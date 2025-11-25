@@ -12,6 +12,7 @@ from graflow.api.serializers import (
     FlowDetailSerializer,
     FlowListSerializer,
     FlowStateSerializer,
+    FlowStateUpdateSerializer,
     FlowStatsSerializer,
     FlowTypeSerializer,
 )
@@ -222,7 +223,7 @@ class FlowViewSet(viewsets.GenericViewSet):
         description="""
         Get detailed information about a specific flow.
         
-        Returns the full flow object including state, current_node, and error_message.
+        Returns the full flow object including state, current_state_name, and error_message.
         Automatically filters to ensure users can only access their own flows.
         """,
         responses={
@@ -237,7 +238,7 @@ class FlowViewSet(viewsets.GenericViewSet):
         """
         Retrieve a specific flow by ID.
 
-        Returns detailed information including state and current execution node.
+        Returns detailed information including current state and current state name.
         """
         # This now automatically filters by user due to get_object()
         flow = self.get_object()
@@ -379,17 +380,14 @@ class FlowViewSet(viewsets.GenericViewSet):
     )
     def destroy(self, request, pk=None):
         """
-        Delete a flow (cancels it).
-        Idempotent - succeeds even if flow is already in a terminal state.
-        Note: Use the explicit /cancel/ action for stricter validation.
+        Soft-delete a flow by marking it cancelled.
+
+        This hides the flow from list/detail responses even if it has already
+        completed. Unlike the `/cancel/` action, this never raises and is fully
+        idempotent.
         """
         flow = self.get_object()
-        try:
-            flow.cancel()
-        except ValueError:
-            # Flow is already in a terminal state - that's fine for DELETE
-            # DELETE should be idempotent
-            pass
+        flow.mark_cancelled()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @extend_schema(
@@ -397,8 +395,10 @@ class FlowViewSet(viewsets.GenericViewSet):
         description="""
         Cancel a flow (hard cancellation - cannot be resumed).
         
-        Unlike DELETE, this endpoint returns an error if the flow is already in a terminal state.
-        Use this for explicit cancellation with validation.
+        This endpoint enforces business rules: attempting to cancel a flow that
+        has already completed, failed, or been cancelled yields a 400. Use this
+        when you want the API to surface "already finished" errors instead of
+        silently hiding the flow.
         """,
         request=None,
         responses={
@@ -472,7 +472,13 @@ class FlowViewSet(viewsets.GenericViewSet):
         - Flow is currently running
         - State validation fails (structure doesn't match flow type)
         
-        The response includes the updated state after execution.
+        **Response Structure:**
+        The response includes:
+        - Flow metadata (id, status, error_message, last_resumed_at, current_state_name)
+        - state_update: Incremental state changes (delta) from this resume operation
+        
+        This allows the frontend to update both the flow metadata and the flow state
+        without needing an additional GET request, while keeping response payloads small.
         """,
         request={
             "application/json": {
@@ -485,7 +491,7 @@ class FlowViewSet(viewsets.GenericViewSet):
             }
         },
         responses={
-            200: FlowStateSerializer,
+            200: FlowStateUpdateSerializer,
             400: OpenApiResponse(
                 description="Validation Error",
                 examples=[
@@ -517,12 +523,32 @@ class FlowViewSet(viewsets.GenericViewSet):
                 value={"counter": 5, "branch_choice": "right", "data": {"id": 123}},
                 request_only=True,
             ),
+            OpenApiExample(
+                "Resume Response",
+                description="Example response showing flow metadata + state_update",
+                value={
+                    "id": 123,
+                    "status": "interrupted",
+                    "error_message": None,
+                    "last_resumed_at": "2024-01-15T10:30:00Z",
+                    "current_state_name": "request_topic",
+                    "state_update": {
+                        "conversation": ["Hello! What topic would you like to discuss?"],
+                        "required_data": ["topic"],
+                    },
+                },
+                response_only=True,
+            ),
         ],
     )
     @decorators.action(detail=True, methods=["post"], url_path="resume")
     def resume(self, request, pk=None):
         """
         Resume flow execution with updated state.
+
+        Returns flow metadata (status, error_message, last_resumed_at, current_state_name)
+        along with the state_update delta. This allows the frontend to update both
+        the flow metadata and the flow state without needing an additional GET request.
 
         Returns 400 if flow cannot be resumed (terminal state or running).
         """
@@ -533,8 +559,12 @@ class FlowViewSet(viewsets.GenericViewSet):
 
         try:
             result_state = self._resume_flow(flow, request.data)
-            serializer = FlowStateSerializer(
-                result_state, context={"graph_state_definition": flow.graph_state_definition}
+            # Refresh flow to get updated status, last_resumed_at, etc.
+            flow.refresh_from_db()
+            # Pass both flow and state_update to serializer
+            serializer = FlowStateUpdateSerializer(
+                {"flow": flow, "state_update": result_state},
+                context={"graph_state_definition": flow.graph_state_definition},
             )
             return Response(serializer.data, status=status.HTTP_200_OK)
         except ValueError as e:

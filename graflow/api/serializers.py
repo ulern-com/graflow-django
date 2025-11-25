@@ -40,11 +40,7 @@ class FlowCreateSerializer(Serializer):
 
 class FlowStateSerializer(Serializer):
     """
-    Two-way serializer for LangGraph's graph state based on a provided Pydantic model.
-
-    This serializer:
-    - validates incoming JSON into the Pydantic model (partial-friendly if model supports defaults)
-    - serializes model instances or dict results back to JSON
+    Serializer for flow states to verify submitted state against the graph state definition.
 
     NOTE: We accept a graph_state_definition in the serializer context
     """
@@ -64,39 +60,14 @@ class FlowStateSerializer(Serializer):
                 {"non_field_errors": [f"Invalid input state: {str(e)}"]}
             ) from e
 
-    def to_representation(self, instance):
-        # instance may be a Pydantic BaseModel, a plain dict from LangGraph, or a dataclass-like
-        try:
-            # LangGraph often returns dict-like; just return as-is if serializable
-            if hasattr(instance, "model_dump"):
-                return instance.model_dump()
-            # Sometimes LangGraph returns a dict with BaseModels inside; best-effort conversion
-            if isinstance(instance, dict):
-
-                def convert(value):
-                    if hasattr(value, "model_dump"):
-                        return value.model_dump()
-                    if isinstance(value, dict):
-                        return {k: convert(v) for k, v in value.items()}
-                    if isinstance(value, (list, tuple)):
-                        return [convert(v) for v in value]
-                    return value
-
-                return convert(instance)
-            return instance
-        except Exception as e:
-            raise serializers.ValidationError(
-                {"non_field_errors": [f"Invalid output state: {str(e)}"]}
-            ) from e
-
 
 class FlowListSerializer(ModelSerializer):
     """
     Lightweight serializer for Flow list views (without state).
-    Includes current_node, can_resume, and display_name for better UX.
+    Includes current_state_name, can_resume, and display_name for better UX.
     """
 
-    current_node = serializers.SerializerMethodField()
+    current_state_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Flow
@@ -108,15 +79,15 @@ class FlowListSerializer(ModelSerializer):
             "status",
             "created_at",
             "last_resumed_at",
-            "current_node",
+            "current_state_name",
             "display_name",
         ]
         read_only_fields = ["id", "app_name", "flow_type", "graph_version", "created_at"]
 
-    def get_current_node(self, obj):
-        """Get current node only for interrupted flows (performance optimization)."""
+    def get_current_state_name(self, obj):
+        """Get current state name only for interrupted flows (performance optimization)."""
         if obj.status == Flow.STATUS_INTERRUPTED:
-            return obj.get_current_node()
+            return obj.get_current_state_name()
         return None
 
 
@@ -126,7 +97,7 @@ class FlowDetailSerializer(ModelSerializer):
     """
 
     state = serializers.SerializerMethodField()
-    current_node = serializers.SerializerMethodField()
+    current_state_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Flow
@@ -140,7 +111,7 @@ class FlowDetailSerializer(ModelSerializer):
             "created_at",
             "last_resumed_at",
             "state",
-            "current_node",
+            "current_state_name",
             "display_name",
         ]
         read_only_fields = ["id", "app_name", "flow_type", "graph_version", "created_at"]
@@ -165,37 +136,111 @@ class FlowDetailSerializer(ModelSerializer):
             return [self._convert_pydantic_to_dict(item) for item in obj]
         return obj
 
-    def get_current_node(self, obj):
-        """Get current node - already computed in state property."""
-        if obj.state:
-            return obj.state.get("current_node")
+    def get_current_state_name(self, obj):
+        """Get current state name only for interrupted flows (performance optimization)."""
+        if obj.status == Flow.STATUS_INTERRUPTED:
+            return obj.get_current_state_name()
         return None
 
 
-class FlowResumeSerializer(Serializer):
+class FlowStateUpdateSerializer(Serializer):
     """
-    Serializer for resuming a flow with updated state.
-    The state structure depends on the flow type's state definition.
+    Response serializer for flow resume endpoint.
 
-    This accepts any dictionary structure. The actual state validation happens
-    at runtime against the specific flow type's state schema.
-
-    Example states vary by flow type:
-    - For hello_world: {"message": "Hello"}
-    - For other flows: {"counter": 5, "branch_choice": "right"}
+    Returns flow metadata (status, error_message, last_resumed_at, current_state_name)
+    along with the state_update delta. This allows the frontend to update both
+    the flow metadata and the flow state without needing an additional GET request.
     """
 
-    # Use DictField to accept any structure
-    # The actual validation happens in FlowStateSerializer with context
-    # This field is just for schema documentation
-    state = serializers.DictField(
-        required=True,
-        allow_empty=False,
-        help_text=(
-            "State dictionary matching the flow type's state schema. "
-            "Structure varies by flow_type."
-        ),
+    # Flow metadata fields
+    id = serializers.IntegerField(help_text="Flow ID", read_only=True)
+    status = serializers.CharField(help_text="Current flow status", read_only=True)
+    error_message = serializers.CharField(
+        allow_null=True, help_text="Error message if flow failed", read_only=True
     )
+    last_resumed_at = serializers.DateTimeField(
+        help_text="Timestamp of last resume operation", read_only=True
+    )
+    current_state_name = serializers.CharField(
+        allow_null=True, help_text="Current state name if flow is interrupted", read_only=True
+    )
+
+    # State update delta (partial state changes)
+    state_update = serializers.SerializerMethodField(
+        help_text="Incremental state update (delta) from this resume operation"
+    )
+
+    def get_state_update(self, obj):
+        """
+        Get state_update from context and serialize it.
+        obj here is expected to be a dict with 'state_update' key.
+        """
+        state_update = obj.get("state_update") if isinstance(obj, dict) else None
+        if state_update is None:
+            return None
+
+        # Use FlowStateSerializer's conversion logic
+        graph_state_definition = self.context.get("graph_state_definition")
+        if graph_state_definition is None:
+            # Fallback: try to convert if it's a dict with Pydantic models
+            return self._convert_pydantic_to_dict(state_update)
+
+        # Serialize using the same logic as FlowStateSerializer
+        try:
+            if hasattr(state_update, "model_dump"):
+                return state_update.model_dump()
+            if isinstance(state_update, dict):
+
+                def convert(value):
+                    if hasattr(value, "model_dump"):
+                        return value.model_dump()
+                    if isinstance(value, dict):
+                        return {k: convert(v) for k, v in value.items()}
+                    if isinstance(value, (list, tuple)):
+                        return [convert(v) for v in value]
+                    return value
+
+                return convert(state_update)
+            return state_update
+        except Exception:
+            # Fallback conversion
+            return self._convert_pydantic_to_dict(state_update)
+
+    def _convert_pydantic_to_dict(self, obj):
+        """Recursively convert Pydantic models to dicts."""
+        if hasattr(obj, "model_dump"):
+            return obj.model_dump(mode="python")
+        elif isinstance(obj, dict):
+            return {k: self._convert_pydantic_to_dict(v) for k, v in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return [self._convert_pydantic_to_dict(item) for item in obj]
+        return obj
+
+    def to_representation(self, instance):
+        """
+        Override to properly handle the instance which is a dict with flow and state_update.
+        """
+        if isinstance(instance, dict) and "flow" in instance:
+            flow = instance["flow"]
+            # Use field serializers to properly serialize values
+            # Handle None values explicitly to avoid CharField converting None to 'None'
+            error_message = flow.error_message if flow.error_message is not None else None
+            current_state_name = flow.get_current_state_name()
+
+            result = {
+                "id": self.fields["id"].to_representation(flow.id),
+                "status": self.fields["status"].to_representation(flow.status),
+                "error_message": error_message,
+                "last_resumed_at": self.fields["last_resumed_at"].to_representation(
+                    flow.last_resumed_at
+                ),
+                "current_state_name": current_state_name,
+            }
+            # Get state_update
+            result["state_update"] = self.get_state_update(instance)
+            return result
+        # Fallback: assume instance is already a dict with the structure we need
+        return super().to_representation(instance)
 
 
 class FlowStatsSerializer(Serializer):

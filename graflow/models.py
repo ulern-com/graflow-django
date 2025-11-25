@@ -371,6 +371,17 @@ class Flow(models.Model):
         self.status = Flow.STATUS_CANCELLED
         self.save()
 
+    def mark_cancelled(self):
+        """
+        Idempotently mark the flow as cancelled without raising errors.
+
+        This is used by DELETE operations where we simply want to hide the flow
+        from the user regardless of its terminal state.
+        """
+        if self.status != Flow.STATUS_CANCELLED:
+            self.status = Flow.STATUS_CANCELLED
+            self.save(update_fields=["status"])
+
     @cached_property
     def graph(self):
         return get_graph(self.flow_type, self.app_name, self.graph_version)
@@ -394,21 +405,21 @@ class Flow(models.Model):
                 # Convert any Pydantic models in the state to proper JSON objects
                 current_state = self._convert_pydantic_models(graph_state.values)
 
-                # Extract interrupt data from checkpoint metadata and get current_node
-                current_node = self._infer_current_node_from_snapshot(graph_state)
+                # Extract interrupt data from checkpoint metadata and get current_state_name
+                current_state_name = self._infer_current_state_name_from_snapshot(graph_state)
 
                 # Merge interrupt values from tasks (useful for Postgres checkpointer)
                 if hasattr(graph_state, "tasks") and graph_state.tasks:
                     for task in graph_state.tasks:
                         if hasattr(task, "interrupts") and task.interrupts:
                             # Fallback to task.name if we still don't have a node
-                            if current_node is None:
-                                current_node = getattr(task, "name", None)
+                            if current_state_name is None:
+                                current_state_name = getattr(task, "name", None)
                             for interrupt in task.interrupts:
                                 # Extract node name from interrupt for backwards compatibility
-                                if current_node is None:
-                                    current_node = self._extract_current_node_name_from_interrupt(
-                                        interrupt
+                                if current_state_name is None:
+                                    current_state_name = (
+                                        self._extract_current_state_name_from_interrupt(interrupt)
                                     )
                                 # Merge interrupt value into state
                                 if hasattr(interrupt, "value") and isinstance(
@@ -417,51 +428,64 @@ class Flow(models.Model):
                                     current_state.update(interrupt.value)
                                     break
 
-                # If we didn't get current_node from tasks, try extracting from raw state values
-                # (for memory backend, interrupts are stored in state values as __interrupt__)
-                if current_node is None:
+                # If we didn't get current_state_name from tasks, try extracting from raw state
+                # values (for memory backend, interrupts are stored in state values as
+                # __interrupt__)
+                if current_state_name is None:
                     # Check raw state values before conversion
                     raw_values = graph_state.values
                     if isinstance(raw_values, dict) and "__interrupt__" in raw_values:
                         interrupt_data = raw_values["__interrupt__"]
                         if isinstance(interrupt_data, (list, tuple)) and len(interrupt_data) > 0:
                             interrupt = interrupt_data[0]
-                            current_node = self._extract_current_node_name_from_interrupt(interrupt)
+                            current_state_name = self._extract_current_state_name_from_interrupt(
+                                interrupt
+                            )
 
                     # Fallback: try extracting from converted state
-                    if current_node is None:
-                        current_node = self._get_current_node_from_state(current_state)
+                    if current_state_name is None:
+                        current_state_name = self._get_current_state_name_from_state(current_state)
 
                 current_state = self._prepare_state(
-                    current_state, skip_interrupt_extraction=True, current_node=current_node
+                    current_state,
+                    skip_interrupt_extraction=True,
+                    current_state_name=current_state_name,
                 )
+                self._current_state_name_cache = current_state_name
                 return current_state
             else:
+                self._current_state_name_cache = None
                 return None
         except Exception as e:
             logger.error(f"Error retrieving graph state for flow {self.pk}: {e}", exc_info=True)
+            self._current_state_name_cache = None
             return None
 
-    def get_current_node(self):
+    def get_current_state_name(self):
         """
-        Get the current node name from the flow's state without modifying it.
+        Get the current state name inferred from the latest graph snapshot.
         """
         try:
-            current_state = self.state
+            if hasattr(self, "_current_state_name_cache"):
+                return self._current_state_name_cache
 
-            # Handle None state
+            current_state = self.state
+            if hasattr(self, "_current_state_name_cache"):
+                return self._current_state_name_cache
+
             if current_state is None:
                 return None
 
-            # current_node is already added to state by _prepare_state
-            return current_state.get("current_node")
+            current_state_name = self._get_current_state_name_from_state(current_state)
+            self._current_state_name_cache = current_state_name
+            return current_state_name
         except Exception as e:
-            logger.error(f"Error getting current node for flow {self.pk}: {e}", exc_info=True)
+            logger.error(f"Error getting current state name for flow {self.pk}: {e}", exc_info=True)
             return None
 
-    def _get_current_node_from_state(self, current_state):
+    def _get_current_state_name_from_state(self, current_state):
         """
-        Extract current node from a state dict without calling self.state.
+        Extract current state name from a state dict without calling self.state.
         This avoids recursion when called from the state property.
         """
         if current_state is None:
@@ -474,22 +498,22 @@ class Flow(models.Model):
                 interrupt_data = current_state["__interrupt__"]
                 if isinstance(interrupt_data, (list, tuple)) and len(interrupt_data) > 0:
                     interrupt = interrupt_data[0]
-                    node_name = self._extract_current_node_name_from_interrupt(interrupt)
-                    if node_name:
-                        return node_name
+                    current_state_name = self._extract_current_state_name_from_interrupt(interrupt)
+                    if current_state_name:
+                        return current_state_name
 
             # Check for other possible patterns
             for key, value in current_state.items():
                 if key.startswith("branch:to:") and value is None:
-                    node_name = key.replace("branch:to:", "")
-                    return node_name
+                    current_state_name = key.replace("branch:to:", "")
+                    return current_state_name
 
         # Fallback: check if current_state has interrupts attribute (for object-like state)
         if hasattr(current_state, "interrupts") and current_state.interrupts:
             for interrupt in current_state.interrupts:
-                node_name = self._extract_current_node_name_from_interrupt(interrupt)
-                if node_name:
-                    return node_name
+                current_state_name = self._extract_current_state_name_from_interrupt(interrupt)
+                if current_state_name:
+                    return current_state_name
 
         return None
 
@@ -530,15 +554,16 @@ class Flow(models.Model):
 
             self.save()
 
-            current_node = None
+            current_state_name = None
             if has_interrupt:
-                # Fetch latest snapshot to determine the waiting node
+                # Fetch latest snapshot to determine the current state name
                 graph_state = self.graph.get_state(config)
-                current_node = self._infer_current_node_from_snapshot(graph_state)
+                current_state_name = self._infer_current_state_name_from_snapshot(graph_state)
+            self._current_state_name_cache = current_state_name
 
             # When there's an interrupt, return only interrupt data (not full state)
             result_state = self._prepare_state(
-                result_state, interrupt_only=has_interrupt, current_node=current_node
+                result_state, interrupt_only=has_interrupt, current_state_name=current_state_name
             )
             return result_state
 
@@ -568,7 +593,7 @@ class Flow(models.Model):
             return data
 
     def _prepare_state(
-        self, state, skip_interrupt_extraction=False, interrupt_only=False, current_node=None
+        self, state, skip_interrupt_extraction=False, interrupt_only=False, current_state_name=None
     ):
         """
         Prepare the state for the flow.
@@ -578,7 +603,7 @@ class Flow(models.Model):
             skip_interrupt_extraction: If True, skip extracting interrupt from __interrupt__ key
             interrupt_only: If True and there's an interrupt, return ONLY interrupt "
             "data (don't merge with full state)
-            current_node: Pre-computed current node (to avoid recursion)
+            current_state_name: Pre-computed current state name (to avoid recursion)
         """
         # Check for interrupt and extract its value (only if not already extracted)
         if not skip_interrupt_extraction and state and "__interrupt__" in state:
@@ -598,12 +623,8 @@ class Flow(models.Model):
         # Clean up LangGraph internal fields
         state = self._clean_internal_fields(state)
 
-        # LangGraph is not aware of current_node, so we add it manually
-        # Use provided current_node or compute it (but avoid recursion by not calling self.state)
-        if current_node is None:
-            current_node = self._get_current_node_from_state(state)
-        state["current_node"] = current_node
-
+        # LangGraph is not aware of current_state_name; it is exposed separately
+        # via Flow.get_current_state_name().
         return state
 
     @staticmethod
@@ -631,8 +652,8 @@ class Flow(models.Model):
 
         return cleaned_state
 
-    def _extract_current_node_name_from_interrupt(self, interrupt) -> str | None:
-        """Extract the current node name from the interrupt."""
+    def _extract_current_state_name_from_interrupt(self, interrupt) -> str | None:
+        """Extract the current state name from the interrupt."""
         if hasattr(interrupt, "ns") and interrupt.ns:
             # Extract node name from namespace (e.g., "select_topic:uuid" -> "select_topic")
             node_namespace = interrupt.ns[0] if interrupt.ns else ""
@@ -642,9 +663,9 @@ class Flow(models.Model):
                 return node_namespace
         return None
 
-    def _infer_current_node_from_snapshot(self, graph_state: Any) -> str | None:
+    def _infer_current_state_name_from_snapshot(self, graph_state: Any) -> str | None:
         """
-        Infer the current node name from a StateSnapshot returned by LangGraph.
+        Infer the current state name from a StateSnapshot returned by LangGraph.
 
         Newer LangGraph versions no longer expose the namespace on Interrupt objects,
         so we rely on snapshot metadata such as `next` or task information.

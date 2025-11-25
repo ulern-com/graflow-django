@@ -131,6 +131,37 @@ Graphs defined in settings are automatically registered when Django starts. You 
 
 All endpoints require authentication by default; DRF session auth is enabled. You can disable authentication for demo/testing by setting `GRAFLOW_REQUIRE_AUTHENTICATION = False`.
 
+**Cancellation semantics:** `POST /flows/<id>/cancel/` enforces business rules and
+returns `400` if the flow is already completed/failed/cancelled. `DELETE /flows/<id>/`
+is an idempotent soft delete that always succeeds by marking the flow cancelled so it
+disappears from subsequent responses. Pick the endpoint that matches your UX needs.
+
+---
+
+## Persistence For Stateful Flows
+
+Need to understand how the Django-based checkpointer, store, and cache work? Head over to `graflow/storage/README.md`. It documents:
+
+- How `DjangoSaver`, `DjangoStore`, and `DjangoCache` wrap LangGraph’s PostgreSQL persistence layers
+- Which Django models map to LangGraph tables
+- When to enable the Django backend vs. in-memory persistence
+
+Referencing that file keeps these docs close to the storage code so they stay accurate.
+
+---
+
+## API Documentation
+
+- See `graflow/api/README.md` for a high-level overview of every endpoint plus regeneration instructions.
+- The full OpenAPI contract lives at `docs/flows-api.schema.yml`. Regenerate it after API changes with:
+
+  ```bash
+  source .venv/bin/activate
+  python manage.py spectacular --file docs/flows-api.schema.yml --format openapi
+  ```
+
+  Commit the updated schema (and optional HTML exports) so API changes are visible in PRs without running the dev server.
+
 ---
 
 ## Testing

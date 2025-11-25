@@ -1,0 +1,792 @@
+openapi: 3.0.3
+info:
+  title: Flows API
+  version: 1.0.0
+  description: Flows API of Graflow Django app
+paths:
+  /api/graflow/flow-types/:
+    get:
+      operationId: graflow_flow_types_list
+      description: "\n        Get a list of all registered flow types available in
+        the system.\n        \n        Each entry includes:\n        - `app_name`:
+        The application namespace\n        - `flow_type`: The flow type identifier
+        (use this when creating flows)\n        - `version`: The version string\n
+        \       \n        Use the `flow_type` values from this endpoint when creating
+        new flows.\n        "
+      summary: List available flow types
+      tags:
+      - graflow
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FlowType'
+              examples:
+                FlowTypesResponse:
+                  value:
+                  - - app_name: myflows
+                      flow_type: hello_world
+                      version: v1
+                    - app_name: myflows
+                      flow_type: workflow_a
+                      version: v1
+                  summary: Flow Types Response
+          description: ''
+  /api/graflow/flows/:
+    get:
+      operationId: graflow_flows_list
+      description: "\n        List flows with optional filtering.\n        \n        By
+        default, returns only in-progress flows (pending, running, interrupted).\n
+        \       Use `status=all` to include all statuses, or specify a specific status.\n
+        \       \n        **State Filtering:**\n        You can filter flows by their
+        state values using the `state__*` query parameter pattern.\n        Use dot
+        notation for nested fields: `state__counter=5` or `state__nested_data__field=value`.\n
+        \       Multiple state filters are combined with AND logic.\n        \n        **Examples:**\n
+        \       - List all interrupted flows: `/flows/?status=interrupted`\n        -
+        List flows of specific type: `/flows/?flow_type=hello_world`\n        - Filter
+        by state: `/flows/?state__counter=5`\n        - Combine filters: `/flows/?flow_type=hello_world&status=interrupted&state__counter=42`\n
+        \       - Get detailed info: `/flows/?is_detailed=true`\n        "
+      summary: List flows
+      parameters:
+      - in: query
+        name: flow_type
+        schema:
+          type: string
+        description: Filter by flow type (e.g., 'hello_world')
+      - in: query
+        name: is_detailed
+        schema:
+          type: boolean
+        description: 'Return detailed flow information including state. Default: false'
+      - in: query
+        name: state__*
+        schema:
+          type: object
+          additionalProperties: {}
+        description: Filter by state fields. Use dot notation for nested fields (e.g.,
+          state__counter=5, state__nested_data__field=value). Multiple filters are
+          combined with AND.
+        style: deepObject
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - all
+          - cancelled
+          - completed
+          - failed
+          - interrupted
+          - pending
+          - running
+        description: 'Filter by status. Options: ''pending'', ''running'', ''interrupted'',
+          ''completed'', ''failed'', ''cancelled'', or ''all''. Defaults to in-progress
+          flows if not specified.'
+      tags:
+      - graflow
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FlowList'
+              examples:
+                ListIn-progressFlows:
+                  value:
+                  - []
+                  summary: List in-progress flows
+                ListWithFilters:
+                  value:
+                  - []
+                  summary: List with filters
+                  description: Filter by type and state
+          description: List of flows. Returns FlowListSerializer by default, or FlowDetailSerializer
+            if is_detailed=true
+    post:
+      operationId: graflow_flows_create
+      description: "\n        Create and start a new flow instance.\n        \n        The
+        flow will be initialized with the provided state (if any) and\n        will
+        execute until it reaches a completion or interrupt point.\n        \n        **Required:**\n
+        \       - `flow_type`: Must be a registered flow type (check `/api/graflow/flow-types/`)\n
+        \       \n        **Optional:**\n        - `state`: Initial state dictionary
+        matching the flow type's state schema\n        - `display_name`: Human-readable
+        name for the flow\n        - `cover_image_url`: URL to a cover image for the
+        flow\n        \n        Returns the created flow with its current state and
+        status.\n        "
+      summary: Create a new flow
+      tags:
+      - graflow
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FlowCreate'
+            examples:
+              CreateHelloWorldFlow:
+                value:
+                  flow_type: hello_world
+                  display_name: My First Flow
+                summary: Create Hello World Flow
+              CreateFlowWithState:
+                value:
+                  flow_type: hello_world
+                  state:
+                    message: Hello from API
+                  display_name: Greeting Flow
+                summary: Create Flow with State
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FlowCreate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FlowCreate'
+        required: true
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowDetail'
+          description: ''
+        '400':
+          description: Validation Error
+  /api/graflow/flows/{id}/:
+    get:
+      operationId: graflow_flows_retrieve
+      description: "\n        Get detailed information about a specific flow.\n        \n
+        \       Returns the full flow object including state, current_state_name,
+        and error_message.\n        Automatically filters to ensure users can only
+        access their own flows.\n        "
+      summary: Retrieve a flow
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this flow.
+        required: true
+      tags:
+      - graflow
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowDetail'
+          description: ''
+        '404':
+          description: Not Found
+    delete:
+      operationId: graflow_flows_destroy
+      description: "\n        Delete a flow (cancels it).\n        \n        This
+        is idempotent - succeeds even if the flow is already in a terminal state.\n
+        \       For stricter validation that returns errors on invalid states, \"\n
+        \       \"use the `/cancel/` endpoint instead.\n        "
+      summary: Delete a flow
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this flow.
+        required: true
+      tags:
+      - graflow
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '204':
+          description: No response body
+        '404':
+          description: Not Found
+  /api/graflow/flows/{id}/cancel/:
+    post:
+      operationId: graflow_flows_cancel_create
+      description: "\n        Cancel a flow (hard cancellation - cannot be resumed).\n
+        \       \n        This endpoint enforces business rules: attempting to cancel
+        a flow that\n        has already completed, failed, or been cancelled yields
+        a 400. Use this\n        when you want the API to surface \"already finished\"
+        errors instead of\n        silently hiding the flow.\n        "
+      summary: Cancel a flow
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this flow.
+        required: true
+      tags:
+      - graflow
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Already Terminated
+        '404':
+          description: Not Found
+  /api/graflow/flows/{id}/resume/:
+    post:
+      operationId: graflow_flows_resume_create
+      description: "\n        Resume flow execution with updated state.\n        \n
+        \       Use this endpoint to continue a flow from an interrupt point or to
+        update\n        the flow's state. The request body is the state dictionary
+        itself - its structure\n        must match the flow type's state definition.\n
+        \       \n        **Important:** The request body structure varies by flow
+        type. Check the flow type's\n        state definition or use the `/flow-types/`
+        endpoint to understand the expected structure.\n        \n        **Returns
+        400 if:**\n        - Flow is in a terminal state (completed, failed, cancelled)\n
+        \       - Flow is currently running\n        - State validation fails (structure
+        doesn't match flow type)\n        \n        **Response Structure:**\n        The
+        response includes:\n        - Flow metadata (id, status, error_message, last_resumed_at,
+        current_state_name)\n        - state_update: Incremental state changes (delta)
+        from this resume operation\n        \n        This allows the frontend to
+        update both the flow metadata and the flow state\n        without needing
+        an additional GET request, while keeping response payloads small.\n        "
+      summary: Resume a flow
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this flow.
+        required: true
+      tags:
+      - graflow
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: State dictionary matching the flow type's state schema.
+                Structure varies by flow_type.
+              additionalProperties: true
+            examples:
+              ResumeHelloWorldFlow:
+                value:
+                  message: Hello from resume
+                summary: Resume Hello World Flow
+                description: Example for hello_world flow type
+              ResumeWithComplexState:
+                value:
+                  counter: 5
+                  branch_choice: right
+                  data:
+                    id: 123
+                summary: Resume with Complex State
+                description: Example for flows with nested state
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowStateUpdate'
+              examples:
+                ResumeResponse:
+                  value:
+                    id: 123
+                    status: interrupted
+                    error_message: null
+                    last_resumed_at: '2024-01-15T10:30:00Z'
+                    current_state_name: request_topic
+                    state_update:
+                      conversation:
+                      - Hello! What topic would you like to discuss?
+                      required_data:
+                      - topic
+                  summary: Resume Response
+                  description: Example response showing flow metadata + state_update
+          description: ''
+        '400':
+          description: Validation Error
+        '404':
+          description: Not Found
+  /api/graflow/flows/most-recent/:
+    get:
+      operationId: graflow_flows_most_recent_retrieve
+      description: "\n        Return the most recently modified flow for the authenticated
+        user.\n        \n        By default, returns the most recent in-progress flow.
+        You can filter by\n        flow_type and/or status to get the most recent
+        flow matching those criteria.\n        "
+      summary: Get most recent flow
+      parameters:
+      - in: query
+        name: flow_type
+        schema:
+          type: string
+        description: Filter by flow type
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - all
+          - cancelled
+          - completed
+          - failed
+          - interrupted
+          - pending
+          - running
+        description: Filter by status. Use 'all' to include all statuses. Defaults
+          to in-progress flows.
+      tags:
+      - graflow
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowDetail'
+          description: Most recent flow details
+        '404':
+          description: No flows found
+  /api/graflow/flows/stats/:
+    get:
+      operationId: graflow_flows_stats_retrieve
+      description: "\n        Get flow statistics for the authenticated user.\n        \n
+        \       Returns counts grouped by:\n        - **Total**: Total number of flows
+        (excluding cancelled)\n        - **by_status**: Counts for each status \"\n
+        \       \"(pending, running, interrupted, completed, failed, cancelled)\n
+        \       - **by_type**: Counts grouped by flow_type\n        \n        Only
+        includes flows accessible to the current user \"\n        \"(user's own flows,
+        or all flows with user=None if authentication is disabled).\n        "
+      summary: Get flow statistics
+      tags:
+      - graflow
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowStats'
+              examples:
+                StatsResponse:
+                  value:
+                    total: 10
+                    by_status:
+                      pending: 2
+                      running: 1
+                      interrupted: 3
+                      completed: 3
+                      failed: 1
+                      cancelled: 0
+                    by_type:
+                      hello_world: 8
+                      workflow_a: 2
+                  summary: Stats Response
+          description: ''
+  /api/schema/:
+    get:
+      operationId: schema_retrieve
+      description: |-
+        OpenApi3 schema for this API. Format can be selected via content negotiation.
+
+        - YAML: application/vnd.oai.openapi
+        - JSON: application/vnd.oai.openapi+json
+      parameters:
+      - in: query
+        name: format
+        schema:
+          type: string
+          enum:
+          - json
+          - yaml
+      - in: query
+        name: lang
+        schema:
+          type: string
+          enum:
+          - af
+          - ar
+          - ar-dz
+          - ast
+          - az
+          - be
+          - bg
+          - bn
+          - br
+          - bs
+          - ca
+          - ckb
+          - cs
+          - cy
+          - da
+          - de
+          - dsb
+          - el
+          - en
+          - en-au
+          - en-gb
+          - eo
+          - es
+          - es-ar
+          - es-co
+          - es-mx
+          - es-ni
+          - es-ve
+          - et
+          - eu
+          - fa
+          - fi
+          - fr
+          - fy
+          - ga
+          - gd
+          - gl
+          - he
+          - hi
+          - hr
+          - hsb
+          - hu
+          - hy
+          - ia
+          - id
+          - ig
+          - io
+          - is
+          - it
+          - ja
+          - ka
+          - kab
+          - kk
+          - km
+          - kn
+          - ko
+          - ky
+          - lb
+          - lt
+          - lv
+          - mk
+          - ml
+          - mn
+          - mr
+          - ms
+          - my
+          - nb
+          - ne
+          - nl
+          - nn
+          - os
+          - pa
+          - pl
+          - pt
+          - pt-br
+          - ro
+          - ru
+          - sk
+          - sl
+          - sq
+          - sr
+          - sr-latn
+          - sv
+          - sw
+          - ta
+          - te
+          - tg
+          - th
+          - tk
+          - tr
+          - tt
+          - udm
+          - ug
+          - uk
+          - ur
+          - uz
+          - vi
+          - zh-hans
+          - zh-hant
+      tags:
+      - schema
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/vnd.oai.openapi:
+              schema:
+                type: object
+                additionalProperties: {}
+            application/yaml:
+              schema:
+                type: object
+                additionalProperties: {}
+            application/vnd.oai.openapi+json:
+              schema:
+                type: object
+                additionalProperties: {}
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+components:
+  schemas:
+    FlowCreate:
+      type: object
+      description: Serializer for creating a new flow.
+      properties:
+        flow_type:
+          type: string
+          description: The type of flow to create (e.g., 'hello_world'). Must be a
+            registered flow type.
+        state:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          description: Optional initial state for the flow. Structure depends on the
+            flow_type's state definition.
+        display_name:
+          type: string
+          nullable: true
+          description: User-friendly display name for the flow.
+          maxLength: 255
+        cover_image_url:
+          type: string
+          format: uri
+          nullable: true
+          description: Optional cover image URL for the flow.
+      required:
+      - flow_type
+    FlowDetail:
+      type: object
+      description: Detailed serializer for Flow detail views (with state and error
+        message).
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        app_name:
+          type: string
+          readOnly: true
+          description: Application name
+        flow_type:
+          type: string
+          readOnly: true
+          description: Type of the flow (i.e. graph name)
+        graph_version:
+          type: string
+          readOnly: true
+          description: Version of the graph defining the flow
+        status:
+          $ref: '#/components/schemas/StatusEnum'
+        error_message:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        last_resumed_at:
+          type: string
+          format: date-time
+          readOnly: true
+        state:
+          type: string
+          readOnly: true
+        current_state_name:
+          type: string
+          readOnly: true
+        display_name:
+          type: string
+          nullable: true
+          description: User-friendly name for this flow
+          maxLength: 255
+      required:
+      - app_name
+      - created_at
+      - current_state_name
+      - flow_type
+      - graph_version
+      - id
+      - last_resumed_at
+      - state
+    FlowList:
+      type: object
+      description: |-
+        Lightweight serializer for Flow list views (without state).
+        Includes current_state_name, can_resume, and display_name for better UX.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        app_name:
+          type: string
+          readOnly: true
+          description: Application name
+        flow_type:
+          type: string
+          readOnly: true
+          description: Type of the flow (i.e. graph name)
+        graph_version:
+          type: string
+          readOnly: true
+          description: Version of the graph defining the flow
+        status:
+          $ref: '#/components/schemas/StatusEnum'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        last_resumed_at:
+          type: string
+          format: date-time
+          readOnly: true
+        current_state_name:
+          type: string
+          readOnly: true
+        display_name:
+          type: string
+          nullable: true
+          description: User-friendly name for this flow
+          maxLength: 255
+      required:
+      - app_name
+      - created_at
+      - current_state_name
+      - flow_type
+      - graph_version
+      - id
+      - last_resumed_at
+    FlowStateUpdate:
+      type: object
+      description: |-
+        Response serializer for flow resume endpoint.
+
+        Returns flow metadata (status, error_message, last_resumed_at, current_state_name)
+        along with the state_update delta. This allows the frontend to update both
+        the flow metadata and the flow state without needing an additional GET request.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+          description: Flow ID
+        status:
+          type: string
+          readOnly: true
+          description: Current flow status
+        error_message:
+          type: string
+          readOnly: true
+          nullable: true
+          description: Error message if flow failed
+        last_resumed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Timestamp of last resume operation
+        current_state_name:
+          type: string
+          readOnly: true
+          nullable: true
+          description: Current state name if flow is interrupted
+        state_update:
+          type: string
+          readOnly: true
+          description: Incremental state update (delta) from this resume operation
+      required:
+      - current_state_name
+      - error_message
+      - id
+      - last_resumed_at
+      - state_update
+      - status
+    FlowStats:
+      type: object
+      description: Response serializer for flow statistics.
+      properties:
+        total:
+          type: integer
+          description: Total number of flows
+        by_status:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Count of flows grouped by status (pending, running, interrupted,
+            completed, failed, cancelled)
+        by_type:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Count of flows grouped by flow_type
+      required:
+      - by_status
+      - by_type
+      - total
+    FlowType:
+      type: object
+      description: Read-only serializer describing a registered flow type entry.
+      properties:
+        app_name:
+          type: string
+        flow_type:
+          type: string
+        version:
+          type: string
+      required:
+      - app_name
+      - flow_type
+      - version
+    StatusEnum:
+      enum:
+      - pending
+      - running
+      - interrupted
+      - completed
+      - failed
+      - cancelled
+      type: string
+      description: |-
+        * `pending` - Pending
+        * `running` - Running
+        * `interrupted` - Interrupted
+        * `completed` - Completed
+        * `failed` - Failed
+        * `cancelled` - Cancelled
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid

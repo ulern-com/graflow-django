@@ -96,14 +96,14 @@ class FlowModelTest(TestCase):
             flow.cancel()
         self.assertIn("terminal state", str(context.exception))
 
-    def test_infer_current_node_prefers_next_metadata(self):
-        """Current node should be inferred from StateSnapshot.next when available."""
+    def test_infer_current_state_name_prefers_next_metadata(self):
+        """Current state name should be inferred from StateSnapshot.next when available."""
         flow = FlowFactory.create(user=self.user1)
         snapshot = SimpleNamespace(next=("request_topic",), tasks=())
-        self.assertEqual(flow._infer_current_node_from_snapshot(snapshot), "request_topic")
+        self.assertEqual(flow._infer_current_state_name_from_snapshot(snapshot), "request_topic")
 
-    def test_infer_current_node_falls_back_to_task_name(self):
-        """Current node should use task.name when next metadata is missing."""
+    def test_infer_current_state_name_falls_back_to_task_name(self):
+        """Current state name should use task.name when next metadata is missing."""
         flow = FlowFactory.create(user=self.user1)
         task = SimpleNamespace(
             name="collect_feedback",
@@ -111,7 +111,7 @@ class FlowModelTest(TestCase):
             path=("__pregel_pull", "collect_feedback"),
         )
         snapshot = SimpleNamespace(next=(), tasks=(task,))
-        self.assertEqual(flow._infer_current_node_from_snapshot(snapshot), "collect_feedback")
+        self.assertEqual(flow._infer_current_state_name_from_snapshot(snapshot), "collect_feedback")
 
     def test_resume_from_pending(self):
         """Test resume from pending state works."""
@@ -157,6 +157,14 @@ class FlowModelTest(TestCase):
         self.assertIn("test_app", str_repr)
         self.assertIn("test_flow", str_repr)
         self.assertIn("background flow", str_repr)
+
+    def test_state_excludes_current_state_name(self):
+        """Flow.state should not include current_state_name metadata."""
+        flow = FlowFactory.create(user=self.user1)
+        flow.resume({"user_id": self.user1.id, "flow_id": flow.id})
+        state = flow.state
+        self.assertIsInstance(state, dict)
+        self.assertNotIn("current_state_name", state)
 
 
 class FlowQuerySetTest(TestCase):

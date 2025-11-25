@@ -224,6 +224,21 @@ class FlowsAPITest(APITestCase):
         flow.refresh_from_db()
         self.assertEqual(flow.status, "cancelled")
 
+    def test_delete_flow_completed(self):
+        """Delete should hide completed flows by marking them cancelled."""
+        flow = FlowFactory.create(user=self.user1, status=Flow.STATUS_COMPLETED)
+
+        url = reverse("graflow:flow-detail", kwargs={"pk": flow.id})
+        response = self.client.delete(url)
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        flow.refresh_from_db()
+        self.assertEqual(flow.status, Flow.STATUS_CANCELLED)
+
+        # Flow should be excluded from subsequent fetches
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
     def test_delete_flow_not_found(self):
         """Test deleting non-existent flow."""
         url = reverse("graflow:flow-detail", kwargs={"pk": 99999})
@@ -286,9 +301,18 @@ class FlowsAPITest(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        # Verify flow-level metadata is cleaned from response
-        self.assertNotIn("user_id", response.data, "user_id should be removed from state")
-        self.assertNotIn("flow_id", response.data, "flow_id should be removed from state")
+        # Verify new response structure includes flow metadata + state_update
+        self.assertIn("id", response.data)
+        self.assertIn("status", response.data)
+        self.assertIn("last_resumed_at", response.data)
+        self.assertIn("state_update", response.data)
+        self.assertEqual(response.data["id"], flow.id)
+
+        # Verify flow-level metadata is cleaned from state_update
+        state_update = response.data.get("state_update", {})
+        if isinstance(state_update, dict):
+            self.assertNotIn("user_id", state_update, "user_id should be removed from state_update")
+            self.assertNotIn("flow_id", state_update, "flow_id should be removed from state_update")
 
         # Verify the graph executed by checking database state (not response, "
         # since interrupt responses may only contain interrupt data, not full state)
@@ -361,13 +385,64 @@ class FlowsAPITest(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # Verify state was updated
+        # Verify response includes flow metadata
+        self.assertIn("id", response.data)
+        self.assertIn("status", response.data)
+        self.assertIn("state_update", response.data)
+        # Verify state_update contains the changes and does not duplicate metadata fields
+        state_update = response.data.get("state_update", {})
+        self.assertNotIn("current_state_name", state_update)
+        self.assertEqual(response.data.get("current_state_name"), "checkpoint")
+        # Verify state was updated in database
         flow.refresh_from_db()
         self.assertEqual(flow.state["branch_choice"], "right")
         # Counter will be incremented by the graph execution
         self.assertIn("counter", flow.state)
         # Verify the flow is still interrupted (status should be interrupted)
         self.assertEqual(flow.status, "interrupted")
+        # Verify response status matches database
+        self.assertEqual(response.data["status"], flow.status)
+
+    def test_resume_response_structure(self):
+        """Test that resume response includes flow metadata + state_update."""
+        flow = FlowFactory.create(user=self.user1)
+        # First resume: Initialize (will interrupt)
+        flow.resume({"user_id": self.user1.id, "flow_id": flow.id})
+
+        url = reverse("graflow:flow-resume", kwargs={"pk": flow.id})
+        response = self.client.post(url, {"should_pause": True}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Verify response structure includes all required flow metadata fields
+        self.assertIn("id", response.data)
+        self.assertIn("status", response.data)
+        self.assertIn("error_message", response.data)
+        self.assertIn("last_resumed_at", response.data)
+        self.assertIn("current_state_name", response.data)
+        self.assertIn("state_update", response.data)
+
+        # Verify flow metadata matches database
+        flow.refresh_from_db()
+        self.assertEqual(response.data["id"], flow.id)
+        self.assertEqual(response.data["status"], flow.status)
+        # error_message should match (can be None or a string)
+        if flow.error_message is None:
+            self.assertIsNone(response.data["error_message"])
+        else:
+            self.assertEqual(response.data["error_message"], flow.error_message)
+        # last_resumed_at is serialized as ISO format by DRF DateTimeField
+        self.assertIsNotNone(response.data["last_resumed_at"])
+
+        # Verify state_update is a dict (or None)
+        state_update = response.data.get("state_update")
+        self.assertIsInstance(state_update, (dict, type(None)))
+
+        # Verify current_state_name is set correctly for interrupted flows
+        if flow.status == Flow.STATUS_INTERRUPTED:
+            self.assertIsNotNone(response.data["current_state_name"])
+        else:
+            self.assertIsNone(response.data["current_state_name"])
 
     # ==================== Query Tests ====================
 
@@ -792,8 +867,8 @@ class FlowsAPITest(APITestCase):
 
     # ==================== Serializer Enhancement Tests ====================
 
-    def test_list_includes_current_node_for_interrupted(self):
-        """Test that list serializer includes current_node for interrupted flows."""
+    def test_list_includes_current_state_name_for_interrupted(self):
+        """Test that list serializer includes current_state_name for interrupted flows."""
         flow = FlowFactory.create(user=self.user1)
         flow.resume({"user_id": self.user1.id, "flow_id": flow.id})
         flow.resume({"user_id": self.user1.id, "flow_id": flow.id, "should_pause": True})
@@ -807,13 +882,13 @@ class FlowsAPITest(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
-        # Should include current_node field
-        self.assertIn("current_node", response.data[0])
-        # Note: current_node extraction may not work with memory backend
+        # Should include current_state_name field
+        self.assertIn("current_state_name", response.data[0])
+        # Note: current_state_name extraction may not work with memory backend
         # The important thing is that the field is present
 
-    def test_detail_includes_current_node(self):
-        """Test that detail serializer includes current_node."""
+    def test_detail_includes_current_state_name(self):
+        """Test that detail serializer includes current_state_name."""
         flow = FlowFactory.create(user=self.user1)
         flow.resume({"user_id": self.user1.id, "flow_id": flow.id})
 
@@ -821,7 +896,7 @@ class FlowsAPITest(APITestCase):
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn("current_node", response.data)
+        self.assertIn("current_state_name", response.data)
 
     # ==================== Stats Endpoint Tests ====================
 
