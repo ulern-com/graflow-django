@@ -395,14 +395,17 @@ class Flow(models.Model):
                 current_state = self._convert_pydantic_models(graph_state.values)
 
                 # Extract interrupt data from checkpoint metadata and get current_node
-                current_node = None
+                current_node = self._infer_current_node_from_snapshot(graph_state)
 
-                # First, try to get current_node from graph_state.tasks (for PostgreSQL backend)
+                # Merge interrupt values from tasks (useful for Postgres checkpointer)
                 if hasattr(graph_state, "tasks") and graph_state.tasks:
                     for task in graph_state.tasks:
                         if hasattr(task, "interrupts") and task.interrupts:
+                            # Fallback to task.name if we still don't have a node
+                            if current_node is None:
+                                current_node = getattr(task, "name", None)
                             for interrupt in task.interrupts:
-                                # Extract node name from interrupt
+                                # Extract node name from interrupt for backwards compatibility
                                 if current_node is None:
                                     current_node = self._extract_current_node_name_from_interrupt(
                                         interrupt
@@ -421,7 +424,7 @@ class Flow(models.Model):
                     raw_values = graph_state.values
                     if isinstance(raw_values, dict) and "__interrupt__" in raw_values:
                         interrupt_data = raw_values["__interrupt__"]
-                        if isinstance(interrupt_data, list) and len(interrupt_data) > 0:
+                        if isinstance(interrupt_data, (list, tuple)) and len(interrupt_data) > 0:
                             interrupt = interrupt_data[0]
                             current_node = self._extract_current_node_name_from_interrupt(interrupt)
 
@@ -469,7 +472,7 @@ class Flow(models.Model):
             # Check for interrupts in the values
             if "__interrupt__" in current_state:
                 interrupt_data = current_state["__interrupt__"]
-                if isinstance(interrupt_data, list) and len(interrupt_data) > 0:
+                if isinstance(interrupt_data, (list, tuple)) and len(interrupt_data) > 0:
                     interrupt = interrupt_data[0]
                     node_name = self._extract_current_node_name_from_interrupt(interrupt)
                     if node_name:
@@ -527,8 +530,16 @@ class Flow(models.Model):
 
             self.save()
 
+            current_node = None
+            if has_interrupt:
+                # Fetch latest snapshot to determine the waiting node
+                graph_state = self.graph.get_state(config)
+                current_node = self._infer_current_node_from_snapshot(graph_state)
+
             # When there's an interrupt, return only interrupt data (not full state)
-            result_state = self._prepare_state(result_state, interrupt_only=has_interrupt)
+            result_state = self._prepare_state(
+                result_state, interrupt_only=has_interrupt, current_node=current_node
+            )
             return result_state
 
         except Exception as e:
@@ -572,6 +583,8 @@ class Flow(models.Model):
         # Check for interrupt and extract its value (only if not already extracted)
         if not skip_interrupt_extraction and state and "__interrupt__" in state:
             interrupts = state.get("__interrupt__", [])
+            if isinstance(interrupts, tuple):
+                interrupts = list(interrupts)
             if interrupts and len(interrupts) > 0:
                 interrupt_value = interrupts[0].value if hasattr(interrupts[0], "value") else {}
                 if isinstance(interrupt_value, dict):
@@ -627,4 +640,36 @@ class Flow(models.Model):
                 return node_namespace.split(":")[0]
             else:
                 return node_namespace
+        return None
+
+    def _infer_current_node_from_snapshot(self, graph_state: Any) -> str | None:
+        """
+        Infer the current node name from a StateSnapshot returned by LangGraph.
+
+        Newer LangGraph versions no longer expose the namespace on Interrupt objects,
+        so we rely on snapshot metadata such as `next` or task information.
+        """
+
+        if graph_state is None:
+            return None
+
+        next_nodes = getattr(graph_state, "next", None)
+        if next_nodes:
+            for node in next_nodes:
+                if isinstance(node, str) and node:
+                    return node
+
+        tasks = getattr(graph_state, "tasks", None)
+        if tasks:
+            for task in tasks:
+                if getattr(task, "interrupts", None):
+                    task_name = getattr(task, "name", None)
+                    if task_name:
+                        return task_name
+                    task_path = getattr(task, "path", None)
+                    if task_path:
+                        for part in reversed(task_path):
+                            if isinstance(part, str) and part:
+                                return part
+
         return None

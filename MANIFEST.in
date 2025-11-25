@@ -1,0 +1,6 @@
+graft graflow
+prune graflow/tests
+global-exclude __pycache__
+global-exclude *.pyc
+global-exclude *.pyo
+
