@@ -10,7 +10,7 @@ include = ["graflow", "graflow.*"]
 exclude = ["graflow.tests", "graflow.tests.*"]
 
 [project]
-name = "graflow-django"
+name = "django-graflow"
 version = "0.1.0"
 description = "Django app for building long-running, interactive, and stateful AI workflows using LangGraph"
 readme = "README.md"
