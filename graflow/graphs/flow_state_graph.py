@@ -1,5 +1,4 @@
 import inspect
-import json
 import logging
 from collections.abc import Callable
 from typing import Any, NamedTuple, TypeVar
@@ -59,11 +58,9 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
 
         def wrapped_func(state: StateT):
             logger.info(f"ENTER: {node_name}")
-            logger.debug(f"State: {json.dumps(state.model_dump(), indent=2)}")
             try:
                 result = func(state)
                 logger.info(f"EXIT: {node_name}")
-                logger.debug(f"State update: {json.dumps(state.model_dump(), indent=2)}")
                 return result
             except Exception as e:
                 logger.error(f"ERROR: {node_name} - {e}")
@@ -157,7 +154,7 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
                 received_data = interrupt({**state_update, "required_data": required_fields})
             else:
                 received_data = interrupt({"required_data": required_fields})
-            logger.debug(f"Data receiver {node_name} | Received: {received_data}")
+            logger.info(f"RECEIVED DATA in {node_name}")
             return received_data
 
         self.add_node(func=data_receiver_func, node_name=node_name, **kwargs)
@@ -185,100 +182,8 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
 
         def send_data_func(state: StateT):
             interrupt({field: getattr(state, field) for field in updated_fields})
-            logger.debug(f"Send data {node_name} | Sent: {updated_fields}")
+            logger.info(f"SENT DATA in {node_name}")
             return {}
 
         self.add_node(func=send_data_func, node_name=node_name, **kwargs)
-        return self
-
-    def add_if_statement(
-        self,
-        source_node_name: str,
-        condition_func: Callable[..., bool],
-        true_node_name: str,
-        false_node_name: str | None = None,
-        destination_node_name: str | None = None,
-        **kwargs,
-    ) -> "FlowStateGraph":
-        """
-        Add a simple if/else statement by adding conditional edges.
-
-        Args:
-            source_node_name: Name for the source node before the if statement
-            condition_func: Function that takes the state and returns a boolean
-            true_node_name: Name for the true node to create
-            false_node_name: Name for the false node to create (optional)
-            destination_node_name: Name for the destination node to create (optional)
-            **kwargs: Additional edge configuration
-
-        Returns:
-            The graph instance for method chaining.
-        """
-        if false_node_name is None:
-            false_node_name = f"skip_{true_node_name}"
-            super().add_node(false_node_name, lambda state: {})
-
-        def safe_condition_func(state: StateT) -> bool:
-            try:
-                result = condition_func(state)
-                logger.debug(f"Condition check from {source_node_name}: {result}")
-                return bool(result)
-            except Exception as e:
-                logger.error(f"Condition function error in {source_node_name}: {e}")
-                return False
-
-        self.add_conditional_edges(
-            source_node_name,
-            safe_condition_func,
-            {True: true_node_name, False: false_node_name},
-            **kwargs,
-        )
-
-        if destination_node_name:
-            self.add_edge(true_node_name, destination_node_name)
-            self.add_edge(false_node_name, destination_node_name)
-
-        return self
-
-    def add_while_loop(
-        self,
-        source_node_name: str,
-        condition_func: Callable[..., bool],
-        repeat_node_name: str,
-        destination_node_name: str,
-        **kwargs,
-    ) -> "FlowStateGraph":
-        """
-        Add a while loop pattern by adding conditional edges.
-
-        Args:
-            source_node_name: Name for the source node before the while loop
-            condition_func: Function that takes the state and returns a boolean
-            repeat_node_name: Name for the repeat node
-            destination_node_name: Name for the destination node when condition is false
-            **kwargs: Additional edge configuration
-
-        Returns:
-            The graph instance for method chaining.
-        """
-        loop_node_name = f"repeat_{repeat_node_name}"
-        super().add_node(loop_node_name, lambda state: {})
-        self.add_edge(source_node_name, loop_node_name)
-
-        def safe_condition_func(state: StateT) -> bool:
-            try:
-                result = condition_func(state)
-                logger.debug(f"While loop condition check at {loop_node_name}: {result}")
-                return bool(result)
-            except Exception as e:
-                logger.error(f"While loop condition function error at {loop_node_name}: {e}")
-                return False
-
-        self.add_conditional_edges(
-            loop_node_name,
-            safe_condition_func,
-            {True: repeat_node_name, False: destination_node_name},
-            **kwargs,
-        )
-        self.add_edge(repeat_node_name, loop_node_name)
         return self
