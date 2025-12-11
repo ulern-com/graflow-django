@@ -1,5 +1,4 @@
 import inspect
-import logging
 from collections.abc import Callable
 from typing import Any, NamedTuple, TypeVar
 
@@ -8,10 +7,8 @@ from langgraph.graph import StateGraph
 from langgraph.types import CachePolicy, interrupt
 
 from graflow.graphs.base import BaseGraphState
+from graflow.logger.logging import log_node
 from graflow.storage.cache import create_cache_key_from_fields
-
-logger = logging.getLogger(__name__)
-
 
 StateT = TypeVar("StateT", bound=BaseGraphState)
 
@@ -56,15 +53,7 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
         if node_name is None:
             node_name = func.__name__
 
-        def wrapped_func(state: StateT):
-            logger.info(f"ENTER: {node_name}")
-            try:
-                result = func(state)
-                logger.info(f"EXIT: {node_name}")
-                return result
-            except Exception as e:
-                logger.error(f"ERROR: {node_name} - {e}")
-                raise
+        wrapped_func = log_node(node_name)(func)
 
         super().add_node(node_name, wrapped_func, **kwargs)
         return self  # type: ignore[return-value]
@@ -106,6 +95,9 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
             llm_result = llm_func(*func_args)
             return {result_field: llm_result}  # type: ignore[return-value]
 
+        # Add logging
+        wrapped_llm_node = log_node(node_name)(llm_wrapper)
+
         # Add cache policy for LLM calls using function parameters as cache key
         # Use getattr with default to safely access settings
         cache_ttl = getattr(settings, "GRAFLOW_NODE_CACHE_TTL", 3600)
@@ -122,7 +114,7 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
         cache_policy = CachePolicy(ttl=cache_ttl, key_func=create_cache_key_func)
         node_kwargs["cache_policy"] = cache_policy
 
-        self.add_node(func=llm_wrapper, node_name=node_name, **node_kwargs)
+        self.add_node(func=wrapped_llm_node, node_name=node_name, **node_kwargs)
         return self  # type: ignore[return-value]
 
     def add_data_receiver_node(
@@ -148,13 +140,14 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
         if node_name is None:
             node_name = f"waiting_for_{'_and_'.join(required_fields)}"
 
+        @log_node(node_name)
         def data_receiver_func(state: StateT):
             if updated_fields:
                 state_update = {field: getattr(state, field) for field in updated_fields}
                 received_data = interrupt({**state_update, "required_data": required_fields})
             else:
                 received_data = interrupt({"required_data": required_fields})
-            logger.info(f"RECEIVED DATA in {node_name}")
+
             return received_data
 
         self.add_node(func=data_receiver_func, node_name=node_name, **kwargs)
@@ -180,9 +173,9 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
         if node_name is None:
             node_name = f"send_{'_and_'.join(updated_fields)}"
 
+        @log_node(node_name)
         def send_data_func(state: StateT):
             interrupt({field: getattr(state, field) for field in updated_fields})
-            logger.info(f"SENT DATA in {node_name}")
             return {}
 
         self.add_node(func=send_data_func, node_name=node_name, **kwargs)
