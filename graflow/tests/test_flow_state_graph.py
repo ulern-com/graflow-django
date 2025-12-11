@@ -39,7 +39,7 @@ class FlowStateGraphTest(TestCase):
         """Set up test fixtures."""
         self.checkpointer = MemorySaver()
         self.config = {"configurable": {"thread_id": "test_thread"}}
-        self.logger = logging.getLogger("graflow.graphs.flow_state_graph")
+        self.logger = logging.getLogger("graflow.logger.logging")
 
     # ==================== Basic Graph Operations ====================
 
@@ -109,8 +109,8 @@ class FlowStateGraphTest(TestCase):
         with self.assertLogs(self.logger, level="INFO") as log:
             graph.compile().invoke({}, config=self.config)
 
-        self.assertTrue(any("ENTER: logged" in msg for msg in log.output))
-        self.assertTrue(any("EXIT: logged" in msg for msg in log.output))
+        self.assertTrue(any("[ENTER] logged" in msg for msg in log.output))
+        self.assertTrue(any("[EXIT] logged" in msg for msg in log.output))
 
     def test_add_node_error_logging(self):
         """Test that node errors are logged."""
@@ -129,7 +129,7 @@ class FlowStateGraphTest(TestCase):
             with self.assertRaises(ValueError):
                 compiled.invoke({}, config=self.config)
 
-        self.assertTrue(any("ERROR: failing" in msg for msg in log.output))
+        self.assertTrue(any("[ERROR] failing" in msg for msg in log.output))
 
     def test_add_node_with_empty_state(self):
         """Test node execution with empty state."""
@@ -415,5 +415,5 @@ class FlowStateGraphTest(TestCase):
             compiled.invoke({}, config={"configurable": {"thread_id": "t2"}})
 
         # Both should have logs
-        self.assertTrue(any("ENTER: simple" in msg for msg in log1.output))
-        self.assertTrue(any("ENTER: simple" in msg for msg in log2.output))
+        self.assertTrue(any("[ENTER] simple" in msg for msg in log1.output))
+        self.assertTrue(any("[ENTER] simple" in msg for msg in log2.output))
