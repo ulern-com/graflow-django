@@ -5,7 +5,7 @@ import time
 logger = logging.getLogger(__name__)
 
 
-def log_node(node_name: str):
+def add_logging_to_node(node_name: str):
     """decorator for adding logging to every node and action in FlowStateGraph"""
 
     def decorator(func):

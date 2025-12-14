@@ -7,7 +7,7 @@ from langgraph.graph import StateGraph
 from langgraph.types import CachePolicy, interrupt
 
 from graflow.graphs.base import BaseGraphState
-from graflow.logger.logging import log_node
+from graflow.logger.logging import add_logging_to_node
 from graflow.storage.cache import create_cache_key_from_fields
 
 StateT = TypeVar("StateT", bound=BaseGraphState)
@@ -53,7 +53,7 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
         if node_name is None:
             node_name = func.__name__
 
-        wrapped_func = log_node(node_name)(func)
+        wrapped_func = add_logging_to_node(node_name)(func)
 
         super().add_node(node_name, wrapped_func, **kwargs)
         return self  # type: ignore[return-value]
@@ -95,9 +95,6 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
             llm_result = llm_func(*func_args)
             return {result_field: llm_result}  # type: ignore[return-value]
 
-        # Add logging
-        wrapped_llm_node = log_node(node_name)(llm_wrapper)
-
         # Add cache policy for LLM calls using function parameters as cache key
         # Use getattr with default to safely access settings
         cache_ttl = getattr(settings, "GRAFLOW_NODE_CACHE_TTL", 3600)
@@ -114,7 +111,7 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
         cache_policy = CachePolicy(ttl=cache_ttl, key_func=create_cache_key_func)
         node_kwargs["cache_policy"] = cache_policy
 
-        self.add_node(func=wrapped_llm_node, node_name=node_name, **node_kwargs)
+        self.add_node(func=llm_wrapper, node_name=node_name, **node_kwargs)
         return self  # type: ignore[return-value]
 
     def add_data_receiver_node(
@@ -140,7 +137,6 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
         if node_name is None:
             node_name = f"waiting_for_{'_and_'.join(required_fields)}"
 
-        @log_node(node_name)
         def data_receiver_func(state: StateT):
             if updated_fields:
                 state_update = {field: getattr(state, field) for field in updated_fields}
@@ -173,7 +169,6 @@ class FlowStateGraph(StateGraph[StateT, StateT, StateT]):
         if node_name is None:
             node_name = f"send_{'_and_'.join(updated_fields)}"
 
-        @log_node(node_name)
         def send_data_func(state: StateT):
             interrupt({field: getattr(state, field) for field in updated_fields})
             return {}
