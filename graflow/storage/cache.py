@@ -12,7 +12,7 @@ from langgraph.checkpoint.serde.base import SerializerProtocol
 
 def _get_cache_entry_model():
     """Lazy import to avoid circular dependencies."""
-    from graflow.models import CacheEntry
+    from graflow.models.langgraph import CacheEntry
 
     return CacheEntry
 

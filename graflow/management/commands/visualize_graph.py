@@ -3,10 +3,7 @@ import os
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
-# Import graflow graphs to ensure they are registered
-# The import itself is needed to trigger registration, even if not directly used
-import graflow.graphs  # noqa: F401
-from graflow.graphs.registry import _GRAPH_REGISTRY, _LATEST_VERSIONS, get_graph
+from graflow.models.registry import FlowType
 
 
 class Command(BaseCommand):
@@ -26,8 +23,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--app-name",
             type=str,
-            default="ulern",
-            help="Application name (default: ulern)",
+            default=None,
+            help="Application name (defaults to GRAFLOW_APP_NAME setting)",
         )
         parser.add_argument(
             "--output-dir",
@@ -60,10 +57,29 @@ class Command(BaseCommand):
             raise CommandError("Please specify --graph-name or use --list to see available graphs")
 
         try:
+            # Get app_name
+            app_name = options["app_name"] or getattr(settings, "GRAFLOW_APP_NAME", "graflow")
+            
+            # Get the flow type
+            if options["graph_version"]:
+                try:
+                    flow_type_obj = FlowType.objects.get(
+                        app_name=app_name,
+                        flow_type=graph_name,
+                        version=options["graph_version"],
+                    )
+                except FlowType.DoesNotExist as e:
+                    raise CommandError(
+                        f"Graph '{graph_name}' version '{options['graph_version']}' "
+                        f"not found in app '{app_name}'"
+                    ) from e
+            else:
+                flow_type_obj = FlowType.objects.get_latest(app_name, graph_name)
+                if not flow_type_obj:
+                    raise CommandError(f"Graph '{graph_name}' not found in app '{app_name}'")
+            
             # Get the graph
-            graph = get_graph(graph_name, options["graph_version"], options["app_name"])
-            if not graph:
-                raise CommandError(f"Graph '{graph_name}' not found")
+            graph = flow_type_obj.get_graph()
 
             # Create output directory
             # Use getattr with default to safely access settings
@@ -75,7 +91,7 @@ class Command(BaseCommand):
             output_path = self.create_visualization(
                 graph,
                 graph_name,
-                options["graph_version"] or _LATEST_VERSIONS.get((options["app_name"], graph_name)),
+                flow_type_obj.version,
                 output_dir,
                 options["format"],
             )
@@ -90,10 +106,14 @@ class Command(BaseCommand):
         self.stdout.write("Available graphs:")
         self.stdout.write("-" * 50)
 
-        for app_name, graph_name, version in _GRAPH_REGISTRY.keys():
-            is_latest = _LATEST_VERSIONS.get((app_name, graph_name)) == version
+        flow_types = FlowType.objects.active().order_by("app_name", "flow_type", "version")
+        for flow_type in flow_types:
+            is_latest = flow_type.is_latest
             status = " (latest)" if is_latest else ""
-            self.stdout.write(f"  {app_name}:{graph_name}:{version}{status}")
+            self.stdout.write(
+                f"  {flow_type.app_name}:{flow_type.flow_type}:"
+                f"{flow_type.version}{status}"
+            )
 
     def create_visualization(self, graph, graph_name, version, output_dir, format="png"):
         """Create the graph visualization using LangGraph's built-in methods."""

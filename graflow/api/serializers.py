@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from rest_framework.serializers import ModelSerializer, Serializer
 
-from graflow.models import Flow
+from graflow.models.flows import Flow
+from graflow.models.registry import FlowType
 
 
 class FlowCreateSerializer(Serializer):
@@ -262,11 +263,12 @@ class FlowStatsSerializer(Serializer):
     )
 
 
-class FlowTypeSerializer(Serializer):
+class FlowTypeSerializer(ModelSerializer):
     """
     Read-only serializer describing a registered flow type entry.
     """
 
-    app_name = serializers.CharField()
-    flow_type = serializers.CharField()
-    version = serializers.CharField()
+    class Meta:
+        model = FlowType
+        fields = ["app_name", "flow_type", "version"]
+        read_only_fields = ["app_name", "flow_type", "version"]

@@ -96,34 +96,32 @@ The project uses PostgreSQL by default. Configure it via environment variables:
 | `GRAFLOW_PERSISTENCE_BACKEND` | `django` | `django` (requires PostgreSQL) or `memory` for testing |
 | `GRAFLOW_NODE_CACHE_TTL` | 2592000 (30 days) | Cache TTL for LangGraph node results |
 | `GRAFLOW_REQUIRE_AUTHENTICATION` | `True` | Require authentication for API access |
-| `GRAFLOW_GRAPHS` | `[]` | List of graph configurations for static registration |
-
 Tests default to the in-memory backend so they run without PostgreSQL. Production must use PostgreSQL to enable the Django store, cache, and checkpointer implementations.
 
-### Static Graph Registration
+### Flow Type Registration
 
-You can register graphs statically via the `GRAFLOW_GRAPHS` setting:
+Flow types (graphs) are registered via the Django admin interface using the `FlowType` model. This provides a database-backed registry that supports multi-tenancy, versioning, and per-flow-type permissions/throttling.
 
-```python
-GRAFLOW_GRAPHS = [
-    {
-        'app_name': 'myflows',
-        'flow_type': 'my_workflow',
-        'version': 'v1',
-        'builder': 'myapp.graphs.my_workflow:build_workflow',  # module.path:function_name
-        'state': 'myapp.graphs.my_workflow:WorkflowState',     # module.path:class_name
-        'is_latest': True,
-    },
-]
-```
+To register a flow type:
+1. Go to the Django admin interface
+2. Navigate to "Flow Types"
+3. Click "Add Flow Type"
+4. Fill in the required fields:
+   - `app_name`: Application name (for multi-tenancy)
+   - `flow_type`: Type identifier (e.g., "hello_world")
+   - `version`: Version string (e.g., "v1", "1.0.0")
+   - `builder_path`: String path to builder function (e.g., "myapp.graphs:build_graph")
+   - `state_path`: String path to state class (e.g., "myapp.graphs:GraphState")
+   - `is_latest`: Whether this is the latest version
+   - `is_active`: Whether this flow type is active
 
-Graphs defined in settings are automatically registered when Django starts. You can also register graphs programmatically using `register_graph()` (useful for tests or dynamic registration).
+You can also configure permissions and throttling per flow type by specifying class paths (e.g., "myapp.permissions:CustomPermission").
 
 ---
 
 ## Working with Flows
 
-1. **Register graphs** via Django settings (`GRAFLOW_GRAPHS` in `myflows/settings.py`) or programmatically using `register_graph()` (see `graflow/tests/fixtures/test_graph.py` for examples).
+1. **Register flow types** via the Django admin interface (see "Flow Type Registration" section above).
 2. **Create flows** by POSTing to `/api/graflow/flows/` with a `flow_type` and optional state payload.
 3. **Resume flows** via `/api/graflow/flows/<id>/resume/` when user input is required.
 4. **Inspect** stats at `/api/graflow/flows/stats/` or fetch the most recent flow via `/api/graflow/flows/most-recent/`.
@@ -165,7 +163,12 @@ Referencing that file keeps these docs close to the storage code so they stay ac
 ---
 
 ## Testing
+Make sure you have the DB running before running the tests. You can use:
+```bash
+docker-compose up -d
+```
 
+Then
 ```bash
 just test
 ```

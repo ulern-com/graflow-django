@@ -163,23 +163,5 @@ GRAFLOW_PERSISTENCE_BACKEND = "django"  # or 'memory' for testing
 GRAFLOW_NODE_CACHE_TTL = 30 * 24 * 60 * 60  # 1 month
 GRAFLOW_REQUIRE_AUTHENTICATION = False  # Only for demo/testing
 
-# Register graphs statically from settings
-# Format: app_name, flow_type, version, builder function path, state class path
-GRAFLOW_GRAPHS = [
-    {
-        "app_name": "myflows",
-        "flow_type": "hello_world",
-        "version": "v1",
-        "builder": "myflows.graphs.hello_world:build_hello_world_graph",  # module.path:func
-        "state": "myflows.graphs.hello_world:HelloWorldState",  # module.path:class_name
-        "is_latest": True,
-    },
-    {
-        "app_name": "myflows",
-        "flow_type": "interactive_demo",
-        "version": "v1",
-        "builder": "myflows.graphs.interactive_demo:build_interactive_demo_graph",
-        "state": "myflows.graphs.interactive_demo:InteractiveDemoState",
-        "is_latest": True,
-    },
-]
+# Flow types are now registered via Django admin using the FlowType model.
+# See README.md for instructions on registering flow types.

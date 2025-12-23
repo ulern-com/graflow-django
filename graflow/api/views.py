@@ -17,8 +17,8 @@ from graflow.api.serializers import (
     FlowTypeSerializer,
 )
 from graflow.api.throttling import FlowCreationThrottle, FlowResumeThrottle
-from graflow.graphs.registry import get_latest_graph_version, list_registered_graphs
-from graflow.models import Flow
+from graflow.models.flows import Flow
+from graflow.models.registry import FlowType
 
 logger = logging.getLogger(__name__)
 
@@ -317,8 +317,8 @@ class FlowViewSet(viewsets.GenericViewSet):
 
         try:
             app_name = getattr(settings, "GRAFLOW_APP_NAME", "graflow")
-            graph_version = get_latest_graph_version(flow_type, app_name)
-            if graph_version is None:
+            flow_type_obj = FlowType.objects.get_latest(app_name, flow_type)
+            if flow_type_obj is None:
                 return Response(
                     {"error": f"No graph found for flow_type '{flow_type}' in app '{app_name}'"},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -327,7 +327,7 @@ class FlowViewSet(viewsets.GenericViewSet):
                 user=request.user if request.user.is_authenticated else None,
                 app_name=app_name,
                 flow_type=flow_type,
-                graph_version=graph_version,
+                graph_version=flow_type_obj.version,
                 display_name=validated_data.get("display_name") or None,
                 cover_image_url=validated_data.get("cover_image_url") or None,
             )
@@ -788,6 +788,6 @@ class FlowTypeViewSet(viewsets.ViewSet):
 
         Returns metadata about all flow types that can be used to create flows.
         """
-        flow_types = list_registered_graphs()
+        flow_types = FlowType.objects.active()
         serializer = FlowTypeSerializer(flow_types, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)

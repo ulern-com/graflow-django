@@ -19,11 +19,3 @@ if not settings.configured:
 
     # Override app name to match what tests expect
     settings.GRAFLOW_APP_NAME = "test_app"
-
-    # Reset any already-initialized persistence components to ensure
-    # they use the memory backend
-    from graflow.graphs import registry
-
-    registry._node_cache = None
-    registry._checkpointer = None
-    registry._store = None

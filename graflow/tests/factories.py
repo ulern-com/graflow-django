@@ -1,6 +1,6 @@
 from factory.django import DjangoModelFactory
 
-from graflow.models import Flow
+from graflow.models.flows import Flow
 
 
 class FlowFactory(DjangoModelFactory):

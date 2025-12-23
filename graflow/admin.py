@@ -1,7 +1,9 @@
 from django.contrib import admin
 from django.utils import timezone
 
-from graflow.models import CacheEntry, Checkpoint, CheckpointBlob, CheckpointWrite, Flow, Store
+from graflow.models.flows import Flow
+from graflow.models.langgraph import CacheEntry, Checkpoint, CheckpointBlob, CheckpointWrite, Store
+from graflow.models.registry import FlowType
 
 
 @admin.register(Store)
@@ -218,3 +220,119 @@ class FlowAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         """Optimize queryset with user select_related."""
         return super().get_queryset(request).select_related("user")
+
+
+@admin.register(FlowType)
+class FlowTypeAdmin(admin.ModelAdmin):
+    """Admin interface for flow types (graph registry)."""
+
+    list_display = (
+        "app_name",
+        "flow_type",
+        "version",
+        "is_latest",
+        "is_active",
+        "display_name",
+        "created_at",
+    )
+    list_filter = ("app_name", "is_latest", "is_active", "created_at", "updated_at")
+    search_fields = ("app_name", "flow_type", "version", "display_name", "description")
+    readonly_fields = ("created_at", "updated_at")
+
+    fieldsets = (
+        (
+            "Identification",
+            {
+                "fields": (
+                    "app_name",
+                    "flow_type",
+                    "version",
+                    "is_latest",
+                    "is_active",
+                )
+            },
+        ),
+        (
+            "Graph Definition",
+            {
+                "fields": (
+                    "builder_path",
+                    "state_path",
+                ),
+                "description": (
+                    "String paths to builder function and state class "
+                    "(e.g., 'myapp.graphs:build_graph')"
+                ),
+            },
+        ),
+        (
+            "Metadata",
+            {
+                "fields": (
+                    "display_name",
+                    "description",
+                )
+            },
+        ),
+        (
+            "Permissions & Throttling",
+            {
+                "fields": (
+                    "crud_permission_class",
+                    "resume_permission_class",
+                    "crud_throttle_class",
+                    "resume_throttle_class",
+                ),
+                "description": (
+                    "String paths to permission/throttle classes "
+                    "(e.g., 'myapp.permissions:CustomPermission')"
+                ),
+            },
+        ),
+        (
+            "Timestamps",
+            {
+                "fields": (
+                    "created_at",
+                    "updated_at",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
+    )
+
+    actions = ["activate", "deactivate", "mark_as_latest"]
+
+    def activate(self, request, queryset):
+        """Activate selected flow types."""
+        count = queryset.update(is_active=True)
+        self.message_user(request, f"Activated {count} flow type(s).")
+
+    activate.short_description = "Activate selected flow types"
+
+    def deactivate(self, request, queryset):
+        """Deactivate selected flow types."""
+        count = queryset.update(is_active=False)
+        self.message_user(request, f"Deactivated {count} flow type(s).")
+
+    deactivate.short_description = "Deactivate selected flow types"
+
+    def mark_as_latest(self, request, queryset):
+        """Mark selected flow types as latest version (unmarks others)."""
+        # Only one version per (app_name, flow_type) can be latest
+        updated_count = 0
+        for flow_type in queryset:
+            # Unmark other versions of the same (app_name, flow_type)
+            FlowType.objects.filter(
+                app_name=flow_type.app_name, flow_type=flow_type.flow_type
+            ).exclude(id=flow_type.id).update(is_latest=False)
+            # Mark this one as latest
+            if not flow_type.is_latest:
+                flow_type.is_latest = True
+                flow_type.save(update_fields=["is_latest"])
+                updated_count += 1
+            else:
+                updated_count += 1
+        self.message_user(request, f"Marked {updated_count} flow type(s) as latest version.")
+
+    mark_as_latest.short_description = "Mark selected as latest version"

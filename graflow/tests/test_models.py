@@ -5,15 +5,9 @@ from types import SimpleNamespace
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
-from graflow.graphs.registry import register_graph
-from graflow.models import Flow
+from graflow.models.flows import Flow
+from graflow.models.registry import FlowType
 from graflow.tests.factories import FlowFactory
-from graflow.tests.fixtures.test_graph import (
-    MinimalTestState,
-    TestGraphState,
-    build_minimal_test_graph,
-    build_test_graph,
-)
 
 User = get_user_model()
 
@@ -24,10 +18,22 @@ class FlowModelTest(TestCase):
     @classmethod
     def setUpTestData(cls):
         """Set up test data once for all tests."""
-        # Register test graphs
-        register_graph("test_app", "test_flow", "v1", build_test_graph, TestGraphState)
-        register_graph(
-            "test_app", "minimal_test_flow", "v1", build_minimal_test_graph, MinimalTestState
+        # Create FlowType entries for test graphs
+        FlowType.objects.create(
+            app_name="test_app",
+            flow_type="test_flow",
+            version="v1",
+            builder_path="graflow.tests.fixtures.test_graph:build_test_graph",
+            state_path="graflow.tests.fixtures.test_graph:TestGraphState",
+            is_latest=True,
+        )
+        FlowType.objects.create(
+            app_name="test_app",
+            flow_type="minimal_test_flow",
+            version="v1",
+            builder_path="graflow.tests.fixtures.test_graph:build_minimal_test_graph",
+            state_path="graflow.tests.fixtures.test_graph:MinimalTestState",
+            is_latest=True,
         )
 
         # Create test users
@@ -173,9 +179,21 @@ class FlowQuerySetTest(TestCase):
     @classmethod
     def setUpTestData(cls):
         """Set up test data once for all tests."""
-        register_graph("test_app", "test_flow", "v1", build_test_graph, TestGraphState)
-        register_graph(
-            "test_app", "minimal_test_flow", "v1", build_minimal_test_graph, MinimalTestState
+        FlowType.objects.create(
+            app_name="test_app",
+            flow_type="test_flow",
+            version="v1",
+            builder_path="graflow.tests.fixtures.test_graph:build_test_graph",
+            state_path="graflow.tests.fixtures.test_graph:TestGraphState",
+            is_latest=True,
+        )
+        FlowType.objects.create(
+            app_name="test_app",
+            flow_type="minimal_test_flow",
+            version="v1",
+            builder_path="graflow.tests.fixtures.test_graph:build_minimal_test_graph",
+            state_path="graflow.tests.fixtures.test_graph:MinimalTestState",
+            is_latest=True,
         )
 
         cls.user1 = User.objects.create_user(
