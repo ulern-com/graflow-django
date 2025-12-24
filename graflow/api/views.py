@@ -16,7 +16,6 @@ from graflow.api.serializers import (
     FlowStatsSerializer,
     FlowTypeSerializer,
 )
-from graflow.api.throttling import FlowCreationThrottle, FlowResumeThrottle
 from graflow.models.flows import Flow, filter_flows_by_permissions
 from graflow.models.registry import FlowType
 
@@ -112,6 +111,88 @@ class FlowViewSet(viewsets.GenericViewSet):
 
         # Default fallback
         return get_permissions()
+
+    def get_throttles(self):
+        """
+        Get throttles dynamically based on the flow type.
+
+        - CRUD operations (list, retrieve, create, destroy, cancel, most_recent):
+          Use flow type's crud_throttle_class if configured, otherwise use default
+        - Resume operation: Use flow type's resume_throttle_class if configured,
+          otherwise use default
+        - Stats: No special throttling (uses default or none)
+        """
+        from graflow.api.throttling import FlowCreationThrottle, FlowResumeThrottle
+
+        action = self.action
+        app_name = getattr(settings, "GRAFLOW_APP_NAME", "graflow")
+
+        # Resume uses resume throttle
+        if action == "resume":
+            pk = self.kwargs.get("pk")
+            if pk:
+                try:
+                    flow = Flow.objects.get(pk=pk)
+                    flow_type_obj = FlowType.objects.get_latest(flow.app_name, flow.flow_type)
+                    if flow_type_obj:
+                        throttle = flow_type_obj.get_throttle_instance("resume")
+                        if throttle:
+                            return [throttle]
+                except Flow.DoesNotExist:
+                    pass
+            # Fallback to default
+            return [FlowResumeThrottle()]
+
+        # For create action, get flow_type from request data
+        if action == "create":
+            flow_type = (
+                self.request.data.get("flow_type")
+                if hasattr(self.request, "data")
+                else None
+            )
+            if flow_type:
+                flow_type_obj = FlowType.objects.get_latest(app_name, flow_type)
+                if flow_type_obj:
+                    throttle = flow_type_obj.get_throttle_instance("crud")
+                    if throttle:
+                        return [throttle]
+            # Fallback to default
+            return [FlowCreationThrottle()]
+
+        # For retrieve, destroy, cancel - get from flow
+        if action in ["retrieve", "destroy", "cancel"]:
+            pk = self.kwargs.get("pk")
+            if pk:
+                try:
+                    flow = Flow.objects.get(pk=pk)
+                    flow_type_obj = FlowType.objects.get_latest(flow.app_name, flow.flow_type)
+                    if flow_type_obj:
+                        throttle = flow_type_obj.get_throttle_instance("crud")
+                        if throttle:
+                            return [throttle]
+                except Flow.DoesNotExist:
+                    pass
+            # Fallback to default (no specific throttle for these actions)
+            return []
+
+        # For list and most_recent: if flow_type query param exists, use that FlowType's throttle
+        if action in ["list", "most_recent"]:
+            flow_type = (
+                self.request.query_params.get("flow_type")
+                if hasattr(self.request, "query_params")
+                else None
+            )
+            if flow_type:
+                flow_type_obj = FlowType.objects.get_latest(app_name, flow_type)
+                if flow_type_obj:
+                    throttle = flow_type_obj.get_throttle_instance("crud")
+                    if throttle:
+                        return [throttle]
+            # If no flow_type param, use default (no specific throttle)
+            return []
+
+        # Default: no throttling (or could return default throttles)
+        return []
 
     def get_queryset(self):
         """
@@ -383,8 +464,6 @@ class FlowViewSet(viewsets.GenericViewSet):
         completion or an interrupt point. If initialization fails, the flow
         is automatically cancelled and an error is returned.
         """
-        self.throttle_classes = [FlowCreationThrottle]
-
         # Use serializer for input validation and schema
         serializer = FlowCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -629,8 +708,6 @@ class FlowViewSet(viewsets.GenericViewSet):
 
         Returns 400 if flow cannot be resumed (terminal state or running).
         """
-        self.throttle_classes = [FlowResumeThrottle]
-
         # This now automatically filters by user due to get_object()
         flow = self.get_object()
 

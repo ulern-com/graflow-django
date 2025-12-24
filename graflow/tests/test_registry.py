@@ -311,6 +311,22 @@ class FlowTypeModelTest(TestCase):
             self.flow_type.get_graph()
         self.assertIn("Error building graph", str(cm.exception))
 
+
+class FlowTypePermissionTest(TestCase):
+    """Test FlowType permission instance methods."""
+
+    @classmethod
+    def setUpTestData(cls):
+        """Set up test data once for all tests."""
+        cls.flow_type = FlowType.objects.create(
+            app_name="test_app",
+            flow_type="test_flow",
+            version="v1",
+            builder_path="graflow.tests.fixtures.test_graph:build_test_graph",
+            state_path="graflow.tests.fixtures.test_graph:TestGraphState",
+            is_latest=True,
+        )
+
     def test_get_permission_instance_crud_default(self):
         """Test get_permission_instance returns default for CRUD when not set."""
         # FlowType with default permission class
@@ -609,6 +625,102 @@ class FlowTypeConstraintsTest(TestCase):
         )
         self.assertEqual(flow_type.crud_throttle_class, "")
         self.assertEqual(flow_type.resume_throttle_class, "")
+
+
+class FlowTypeThrottleTest(TestCase):
+    """Test FlowType throttle instance methods."""
+
+    @classmethod
+    def setUpTestData(cls):
+        """Set up test data once for all tests."""
+        cls.flow_type = FlowType.objects.create(
+            app_name="test_app",
+            flow_type="test_flow",
+            version="v1",
+            builder_path="graflow.tests.fixtures.test_graph:build_test_graph",
+            state_path="graflow.tests.fixtures.test_graph:TestGraphState",
+            is_latest=True,
+        )
+
+    def test_get_throttle_instance_crud_default(self):
+        """Test get_throttle_instance returns None when not configured (uses default)."""
+        throttle = self.flow_type.get_throttle_instance("crud")
+        self.assertIsNone(throttle)  # Should use default viewset throttles
+
+    def test_get_throttle_instance_resume_default(self):
+        """Test get_throttle_instance returns None when not configured (uses default)."""
+        throttle = self.flow_type.get_throttle_instance("resume")
+        self.assertIsNone(throttle)  # Should use default viewset throttles
+
+    def test_get_throttle_instance_crud_custom(self):
+        """Test get_throttle_instance returns custom throttle for CRUD."""
+        self.flow_type.crud_throttle_class = "graflow.api.throttling:FlowCreationThrottle"
+        self.flow_type.save()
+        throttle = self.flow_type.get_throttle_instance("crud")
+        self.assertIsNotNone(throttle)
+        from graflow.api.throttling import FlowCreationThrottle
+
+        self.assertIsInstance(throttle, FlowCreationThrottle)
+
+    def test_get_throttle_instance_resume_custom(self):
+        """Test get_throttle_instance returns custom throttle for resume."""
+        self.flow_type.resume_throttle_class = "graflow.api.throttling:FlowResumeThrottle"
+        self.flow_type.save()
+        throttle = self.flow_type.get_throttle_instance("resume")
+        self.assertIsNotNone(throttle)
+        from graflow.api.throttling import FlowResumeThrottle
+
+        self.assertIsInstance(throttle, FlowResumeThrottle)
+
+    def test_get_throttle_instance_empty_path_returns_none(self):
+        """Test get_throttle_instance returns None when throttle_path is empty."""
+        self.flow_type.crud_throttle_class = ""
+        self.flow_type.save()
+        throttle = self.flow_type.get_throttle_instance("crud")
+        self.assertIsNone(throttle)
+
+    def test_get_throttle_instance_whitespace_path_returns_none(self):
+        """Test get_throttle_instance returns None when throttle_path is whitespace."""
+        self.flow_type.crud_throttle_class = "   "
+        self.flow_type.save()
+        throttle = self.flow_type.get_throttle_instance("crud")
+        self.assertIsNone(throttle)
+
+    def test_get_throttle_instance_invalid_path_falls_back(self):
+        """Test get_throttle_instance falls back to None when throttle class fails to load."""
+        self.flow_type.crud_throttle_class = "nonexistent.module:Throttle"
+        self.flow_type.save()
+        throttle = self.flow_type.get_throttle_instance("crud")
+        self.assertIsNone(throttle)  # Should fall back to default
+
+    def test_get_throttle_instance_with_dot_format(self):
+        """Test get_throttle_instance works with dot format throttle path."""
+        self.flow_type.crud_throttle_class = "graflow.api.throttling.FlowCreationThrottle"
+        self.flow_type.save()
+        throttle = self.flow_type.get_throttle_instance("crud")
+        self.assertIsNotNone(throttle)
+        from graflow.api.throttling import FlowCreationThrottle
+
+        self.assertIsInstance(throttle, FlowCreationThrottle)
+
+    def test_get_throttle_instance_with_colon_format(self):
+        """Test get_throttle_instance works with colon format throttle path."""
+        self.flow_type.crud_throttle_class = "graflow.api.throttling:FlowCreationThrottle"
+        self.flow_type.save()
+        throttle = self.flow_type.get_throttle_instance("crud")
+        self.assertIsNotNone(throttle)
+        from graflow.api.throttling import FlowCreationThrottle
+
+        self.assertIsInstance(throttle, FlowCreationThrottle)
+
+    def test_get_throttle_instance_returns_different_instances(self):
+        """Test get_throttle_instance returns different instances (not singletons)."""
+        self.flow_type.crud_throttle_class = "graflow.api.throttling:FlowCreationThrottle"
+        self.flow_type.save()
+        throttle1 = self.flow_type.get_throttle_instance("crud")
+        throttle2 = self.flow_type.get_throttle_instance("crud")
+        # Should be different instances
+        self.assertIsNot(throttle1, throttle2)
 
 
 class FlowTypeVersioningTest(TestCase):

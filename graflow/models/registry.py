@@ -303,3 +303,33 @@ class FlowType(models.Model):
             # Fallback to default
             require_auth = getattr(settings, "GRAFLOW_REQUIRE_AUTHENTICATION", True)
             return IsAuthenticated() if require_auth else AllowAny()
+
+    def get_throttle_instance(self, throttle_type: str = "crud"):
+        """
+        Get a throttle instance for this flow type.
+
+        Args:
+            throttle_type: "crud" or "resume"
+
+        Returns:
+            Throttle instance (DRF BaseThrottle), or None if not configured
+        """
+        throttle_path = (
+            self.resume_throttle_class if throttle_type == "resume"
+            else self.crud_throttle_class
+        )
+
+        if not throttle_path or not throttle_path.strip():
+            # No throttle configured - return None to use default viewset throttles
+            return None
+
+        try:
+            throttle_class = _import_from_string(throttle_path)
+            return throttle_class()
+        except (ValueError, AttributeError, ImportError) as e:
+            logger.warning(
+                f"Failed to load throttle class '{throttle_path}' for "
+                f"{self.app_name}:{self.flow_type}: {e}. Using default."
+            )
+            # Fallback to None (will use default viewset throttles)
+            return None
