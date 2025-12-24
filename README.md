@@ -115,7 +115,47 @@ To register a flow type:
    - `is_latest`: Whether this is the latest version
    - `is_active`: Whether this flow type is active
 
-You can also configure permissions and throttling per flow type by specifying class paths (e.g., "myapp.permissions:CustomPermission").
+You can also configure permissions and throttling per flow type by specifying class paths (e.g., "myapp.permissions:CustomPermission"). See the [Permissions and Throttling](#permissions-and-throttling) section below for details.
+
+---
+
+## Permissions and Throttling
+
+Graflow supports fine-grained, per-flow-type permissions and throttling for access control and rate limiting. Each `FlowType` can have separate permission and throttle classes for CRUD operations (list, create, retrieve, destroy, cancel) and resume operations.
+
+### Quick Overview
+
+**Permissions** control **who** can access which flows:
+- Default: `IsAuthenticated` for both CRUD and resume operations
+- Can be customized per flow type via `crud_permission_class` and `resume_permission_class`
+- Supports custom permission classes for subscription tiers, user roles, flow ownership, etc.
+
+**Throttling** controls **how frequently** users can perform operations:
+- Default: 100 requests/hour for creation, 300 requests/hour for resume
+- Can be customized per flow type via `crud_throttle_class` and `resume_throttle_class`
+- Supports custom throttle classes for tiered access (premium vs. free users)
+
+### Configuration
+
+Configure permissions and throttling via Django admin or programmatically when creating `FlowType` instances. Specify class paths in format `module.path:ClassName` (e.g., `myapp.permissions:SubscriptionPermission`).
+
+**Example:**
+```python
+flow_type = FlowType.objects.create(
+    app_name="myapp",
+    flow_type="premium_workflow",
+    version="v1",
+    builder_path="myapp.graphs:build_premium_workflow",
+    state_path="myapp.graphs:PremiumWorkflowState",
+    is_latest=True,
+    crud_permission_class="myapp.permissions:SubscriptionPermission",
+    resume_permission_class="myapp.permissions:SubscriptionPermission",
+    crud_throttle_class="myapp.throttling:PremiumUserThrottle",
+    resume_throttle_class="myapp.throttling:PremiumUserThrottle",
+)
+```
+
+For detailed documentation, examples, and best practices, see [`docs/PERMISSIONS_AND_THROTTLING.md`](docs/PERMISSIONS_AND_THROTTLING.md).
 
 ---
 
