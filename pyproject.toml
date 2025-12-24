@@ -11,7 +11,7 @@ exclude = ["graflow.tests", "graflow.tests.*"]
 
 [project]
 name = "django-graflow"
-version = "0.2.0"
+version = "0.3.0"
 description = "Django app for building long-running, interactive, and stateful AI workflows using LangGraph"
 readme = "README.md"
 requires-python = ">=3.12"
