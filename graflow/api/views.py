@@ -17,7 +17,7 @@ from graflow.api.serializers import (
     FlowTypeSerializer,
 )
 from graflow.api.throttling import FlowCreationThrottle, FlowResumeThrottle
-from graflow.models.flows import Flow
+from graflow.models.flows import Flow, filter_flows_by_permissions
 from graflow.models.registry import FlowType
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,79 @@ class FlowViewSet(viewsets.GenericViewSet):
     lookup_field = "pk"
 
     def get_permissions(self):
+        """
+        Get permissions dynamically based on the flow type.
+
+        - CRUD operations (list, retrieve, create, destroy, cancel, most_recent):
+          Use flow type's crud_permission_class
+        - Resume operation: Use flow type's resume_permission_class
+        - Stats: Admin only (IsAdminUser)
+        """
+        from rest_framework.permissions import IsAdminUser
+
+        action = self.action
+        app_name = getattr(settings, "GRAFLOW_APP_NAME", "graflow")
+
+        # Stats endpoint is admin-only
+        if action == "stats":
+            return [IsAdminUser()]
+
+        # Resume uses resume permission
+        if action == "resume":
+            # Get flow directly from database using pk (can't use get_object() here)
+            pk = self.kwargs.get("pk")
+            if pk:
+                try:
+                    flow = Flow.objects.get(pk=pk)
+                    flow_type_obj = FlowType.objects.get_latest(flow.app_name, flow.flow_type)
+                    if flow_type_obj:
+                        return [flow_type_obj.get_permission_instance("resume")]
+                except Flow.DoesNotExist:
+                    pass
+            return get_permissions()  # Fallback
+
+        # For create action, get flow_type from request data
+        if action == "create":
+            flow_type = (
+                self.request.data.get("flow_type")
+                if hasattr(self.request, "data")
+                else None
+            )
+            if flow_type:
+                flow_type_obj = FlowType.objects.get_latest(app_name, flow_type)
+                if flow_type_obj:
+                    return [flow_type_obj.get_permission_instance("crud")]
+            return get_permissions()  # Fallback
+
+        # For retrieve, destroy, cancel - get from flow
+        if action in ["retrieve", "destroy", "cancel"]:
+            # Get flow directly from database using pk (can't use get_object() here)
+            pk = self.kwargs.get("pk")
+            if pk:
+                try:
+                    flow = Flow.objects.get(pk=pk)
+                    flow_type_obj = FlowType.objects.get_latest(flow.app_name, flow.flow_type)
+                    if flow_type_obj:
+                        return [flow_type_obj.get_permission_instance("crud")]
+                except Flow.DoesNotExist:
+                    pass
+            return get_permissions()  # Fallback
+
+        # For list and most_recent: if flow_type query param exists, use that FlowType's permission
+        if action in ["list", "most_recent"]:
+            flow_type = (
+                self.request.query_params.get("flow_type")
+                if hasattr(self.request, "query_params")
+                else None
+            )
+            if flow_type:
+                flow_type_obj = FlowType.objects.get_latest(app_name, flow_type)
+                if flow_type_obj:
+                    return [flow_type_obj.get_permission_instance("crud")]
+            # If no flow_type param, use default (we'll filter queryset in the action method)
+            return get_permissions()
+
+        # Default fallback
         return get_permissions()
 
     def get_queryset(self):
@@ -211,6 +284,10 @@ class FlowViewSet(viewsets.GenericViewSet):
             flows = flows.filter_by_state(**state_filters)
         else:
             flows = list(flows)
+
+        # If flow_type was not in query params, filter by permissions
+        if not flow_type:
+            flows = filter_flows_by_permissions(flows, request, self, permission_type="crud")
 
         if is_detailed:
             serializer = FlowDetailSerializer(flows, many=True)
@@ -738,10 +815,16 @@ class FlowViewSet(viewsets.GenericViewSet):
         # Order by most recently interacted/updated
         flows = flows.by_recency()
 
+        # Convert to list if needed for permission filtering
+        if not isinstance(flows, list):
+            flows = list(flows)
+
+        # If flow_type was not in query params, filter by permissions
+        if not flow_type:
+            flows = filter_flows_by_permissions(flows, request, self, permission_type="crud")
+
         # Get the first (most recent)
-        most_recent_flow = (
-            flows.first() if hasattr(flows, "first") else (flows[0] if flows else None)
-        )
+        most_recent_flow = flows[0] if flows else None
 
         if not most_recent_flow:
             return Response({"detail": "No flows found"}, status=status.HTTP_404_NOT_FOUND)

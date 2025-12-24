@@ -145,6 +145,102 @@ class FlowQuerySet(models.QuerySet):
 
         return True
 
+    def filter_by_flow_type_permissions(self, request, view, permission_type: str = "crud"):
+        """
+        Filter flows to only include those where the user has permission
+        based on each flow's flow type permission class.
+
+        Args:
+            request: DRF request object
+            view: DRF view instance
+            permission_type: "crud" or "resume"
+
+        Returns:
+            List of Flow instances where user has permission
+        """
+        from graflow.models.registry import FlowType
+
+        # Convert queryset to list to iterate
+        flows_list = list(self)
+
+        # Group flows by (app_name, flow_type) for efficient permission checking
+        flow_type_keys = {}
+        for flow in flows_list:
+            key = (flow.app_name, flow.flow_type)
+            if key not in flow_type_keys:
+                flow_type_keys[key] = []
+            flow_type_keys[key].append(flow)
+
+        # Check permissions for each flow object individually (object-level permission check)
+        allowed_flows = []
+        for (app_name, flow_type_name), flow_list in flow_type_keys.items():
+            try:
+                flow_type_obj = FlowType.objects.get_latest(app_name, flow_type_name)
+                if flow_type_obj:
+                    permission = flow_type_obj.get_permission_instance(permission_type)
+                    # Check object-level permission for each flow
+                    for flow in flow_list:
+                        if permission.has_object_permission(request, view, flow):
+                            allowed_flows.append(flow)
+            except Exception as e:
+                logger.warning(
+                    f"Error checking permission for {app_name}:{flow_type_name}: {e}"
+                )
+                # On error, skip these flows (fail secure)
+                continue
+
+        return allowed_flows
+
+
+def filter_flows_by_permissions(flows, request, view, permission_type: str = "crud"):
+    """
+    Filter flows (queryset or list) to only include those where the user has permission
+    based on each flow's flow type permission class.
+
+    Args:
+        flows: FlowQuerySet or list of Flow instances
+        request: DRF request object
+        view: DRF view instance
+        permission_type: "crud" or "resume"
+
+    Returns:
+        List of Flow instances where user has permission
+    """
+    # If it's a queryset, use its method
+    if hasattr(flows, "filter_by_flow_type_permissions"):
+        return flows.filter_by_flow_type_permissions(request, view, permission_type)
+
+    # If it's already a list, use the same logic
+    from graflow.models.registry import FlowType
+
+    # Group flows by (app_name, flow_type) for efficient permission checking
+    flow_type_keys = {}
+    for flow in flows:
+        key = (flow.app_name, flow.flow_type)
+        if key not in flow_type_keys:
+            flow_type_keys[key] = []
+        flow_type_keys[key].append(flow)
+
+    # Check permissions for each flow object individually (object-level permission check)
+    allowed_flows = []
+    for (app_name, flow_type_name), flow_list in flow_type_keys.items():
+        try:
+            flow_type_obj = FlowType.objects.get_latest(app_name, flow_type_name)
+            if flow_type_obj:
+                permission = flow_type_obj.get_permission_instance(permission_type)
+                # Check object-level permission for each flow
+                for flow in flow_list:
+                    if permission.has_object_permission(request, view, flow):
+                        allowed_flows.append(flow)
+        except Exception as e:
+            logger.warning(
+                f"Error checking permission for {app_name}:{flow_type_name}: {e}"
+            )
+            # On error, skip these flows (fail secure)
+            continue
+
+    return allowed_flows
+
 
 class Flow(models.Model):
     STATUS_PENDING = "pending"  # Created, not yet invoked

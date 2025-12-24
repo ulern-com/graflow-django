@@ -16,7 +16,8 @@ def _import_from_string(path: str):
     Import a class or function from a string path.
 
     Args:
-        path: String in format "module.path:attribute"
+        path: String in format "module.path:attribute" or "module.path.attribute"
+              (colon format is preferred, but dot format is supported for backwards compatibility)
 
     Returns:
         The imported class or function
@@ -24,12 +25,18 @@ def _import_from_string(path: str):
     Raises:
         ValueError: If path format is invalid or import fails
     """
-    try:
+    # Handle both "module.path:attribute" and "module.path.attribute" formats
+    if ":" in path:
         module_path, attr_name = path.rsplit(":", 1)
-    except ValueError as e:
+    elif "." in path:
+        # For backwards compatibility:
+        # "module.path.attribute" -> module="module.path", attr="attribute"
+        module_path, attr_name = path.rsplit(".", 1)
+    else:
         raise ValueError(
-            f"Invalid path format '{path}'. Expected 'module.path:attribute'"
-        ) from e
+            f"Invalid path format '{path}'. "
+            f"Expected 'module.path:attribute' or 'module.path.attribute'"
+        )
 
     try:
         module = __import__(module_path, fromlist=[attr_name])
@@ -261,3 +268,38 @@ class FlowType(models.Model):
             raise ValueError(
                 f"Error building graph {self.app_name}:{self.flow_type}:{self.version}: {e}"
             ) from e
+
+    def get_permission_instance(self, permission_type: str = "crud"):
+        """
+        Get a permission instance for this flow type.
+
+        Args:
+            permission_type: "crud" or "resume"
+
+        Returns:
+            Permission instance (DRF BasePermission)
+        """
+        from django.conf import settings
+        from rest_framework.permissions import AllowAny, IsAuthenticated
+
+        permission_path = (
+            self.resume_permission_class if permission_type == "resume"
+            else self.crud_permission_class
+        )
+
+        if not permission_path:
+            # Fallback to default
+            require_auth = getattr(settings, "GRAFLOW_REQUIRE_AUTHENTICATION", True)
+            return IsAuthenticated() if require_auth else AllowAny()
+
+        try:
+            permission_class = _import_from_string(permission_path)
+            return permission_class()
+        except (ValueError, AttributeError, ImportError) as e:
+            logger.warning(
+                f"Failed to load permission class '{permission_path}' for "
+                f"{self.app_name}:{self.flow_type}: {e}. Using default."
+            )
+            # Fallback to default
+            require_auth = getattr(settings, "GRAFLOW_REQUIRE_AUTHENTICATION", True)
+            return IsAuthenticated() if require_auth else AllowAny()

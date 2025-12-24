@@ -918,6 +918,15 @@ class FlowsAPITest(APITestCase):
 
     def test_stats_endpoint_returns_counts(self):
         """Test stats endpoint returns flow counts by status and type."""
+        # Stats endpoint requires admin user
+        admin_user = User.objects.create_user(
+            email="admin@test.com",
+            username="admin",
+            password="testpass123",
+            is_staff=True,
+        )
+        self.client.force_authenticate(user=admin_user)
+
         # Get initial counts to account for flows from other tests
         url = reverse("graflow:flow-stats")
         initial_response = self.client.get(url)
@@ -926,15 +935,15 @@ class FlowsAPITest(APITestCase):
         initial_completed = initial_response.data.get("by_status", {}).get("completed", 0)
         initial_test_flow = initial_response.data.get("by_type", {}).get("test_flow", 0)
 
-        # Create flows with various statuses
-        flow1 = FlowFactory.create(user=self.user1)
-        flow1.resume({"user_id": self.user1.id, "flow_id": flow1.id})  # interrupted
+        # Create flows with various statuses for admin user
+        flow1 = FlowFactory.create(user=admin_user)
+        flow1.resume({"user_id": admin_user.id, "flow_id": flow1.id})  # interrupted
 
-        flow2 = FlowFactory.create(user=self.user1)
-        flow2.resume({"user_id": self.user1.id, "flow_id": flow2.id})
-        flow2.resume({"user_id": self.user1.id, "flow_id": flow2.id})  # completed
+        flow2 = FlowFactory.create(user=admin_user)
+        flow2.resume({"user_id": admin_user.id, "flow_id": flow2.id})
+        flow2.resume({"user_id": admin_user.id, "flow_id": flow2.id})  # completed
 
-        flow3 = FlowFactory.create(user=self.user1, flow_type="minimal_test_flow")
+        flow3 = FlowFactory.create(user=admin_user, flow_type="minimal_test_flow")
         flow3.cancel()  # cancelled
 
         response = self.client.get(url)
@@ -972,10 +981,20 @@ class FlowsAPITest(APITestCase):
 
     def test_stats_respects_user_isolation(self):
         """Test that stats only include user's own flows."""
-        # Create flows for user1
-        FlowFactory.create(user=self.user1)
+        # Stats endpoint requires admin user
+        admin_user = User.objects.create_user(
+            email="admin@test.com",
+            username="admin",
+            password="testpass123",
+            is_staff=True,
+        )
+        self.client.force_authenticate(user=admin_user)
 
-        # Create flows for user2
+        # Create flows for admin user
+        FlowFactory.create(user=admin_user)
+
+        # Create flows for other users (should not be counted)
+        FlowFactory.create(user=self.user1)
         FlowFactory.create(user=self.user2)
         FlowFactory.create(user=self.user2)
 
@@ -983,7 +1002,7 @@ class FlowsAPITest(APITestCase):
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # Should only count user1's flow
+        # Should only count admin user's flow (get_queryset filters by user)
         self.assertEqual(response.data["total"], 1)
 
     # ==================== Most Recent Endpoint Tests ====================
