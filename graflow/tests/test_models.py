@@ -162,6 +162,15 @@ class FlowModelTest(TestCase):
             flow.resume({"user_id": self.user1.id, "flow_id": flow.id})
         self.assertIn("running", str(context.exception))
 
+    def test_resume_blocks_concurrent_transition(self):
+        """Resume should fail if another process set status to running."""
+        flow = FlowFactory.create(user=self.user1, status=Flow.STATUS_PENDING)
+        Flow.objects.filter(pk=flow.pk).update(status=Flow.STATUS_RUNNING)
+
+        with self.assertRaises(ValueError) as context:
+            flow.resume({"user_id": self.user1.id, "flow_id": flow.id})
+        self.assertIn("running", str(context.exception))
+
     def test_str_representation_with_user(self):
         """Test string representation includes user info."""
         flow = FlowFactory.create(user=self.user1)

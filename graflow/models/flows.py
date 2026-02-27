@@ -463,10 +463,17 @@ class Flow(models.Model):
         Raises:
             Exception: If graph execution fails (status set to FAILED)
         """
-        if self.is_terminal():
-            raise ValueError(f"Cannot resume flow in terminal state: {self.status}")
-        if self.status == Flow.STATUS_RUNNING:
-            raise ValueError("Cannot resume flow while it is running")
+        # Atomically transition to RUNNING if currently pending or interrupted.
+        updated = Flow.objects.filter(
+            pk=self.pk, status__in=[Flow.STATUS_PENDING, Flow.STATUS_INTERRUPTED]
+        ).update(status=Flow.STATUS_RUNNING)
+        if updated == 0:
+            self.refresh_from_db()
+            if self.is_terminal():
+                raise ValueError(f"Cannot resume flow in terminal state: {self.status}")
+            if self.status == Flow.STATUS_RUNNING:
+                raise ValueError("Cannot resume flow while it is running")
+            raise ValueError(f"Cannot resume flow from state: {self.status}")
 
         config = {
             "configurable": {"thread_id": str(self.pk)},
@@ -477,9 +484,8 @@ class Flow(models.Model):
             # Store previous status before changing
             was_interrupted = self.status == Flow.STATUS_INTERRUPTED
 
-            # Set status to running before execution starts
+            # Status already updated in DB; keep in-memory in sync
             self.status = Flow.STATUS_RUNNING
-            self.save()
 
             # Invoke the graph based on previous state
             if was_interrupted:
