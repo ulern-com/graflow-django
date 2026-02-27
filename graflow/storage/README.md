@@ -27,7 +27,7 @@ To provide better and more natural support for checkpoints and store within Djan
 - **DjangoSaver** ([`graflow/storage/checkpointer.py`](../storage/checkpointer.py)): Extends [`PostgresSaver`](https://github.com/langchain-ai/langgraph/blob/main/libs/langgraph/langgraph/checkpoint/postgres/__init__.py) to automatically use Django database settings
 - **DjangoStore** ([`graflow/storage/store.py`](../storage/store.py)): Extends [`PostgresStore`](https://github.com/langchain-ai/langgraph/blob/main/libs/langgraph/langgraph/store/postgres/__init__.py) to automatically use Django database settings
 
-These implementations are used in [`graflow/graphs/registry.py`](../graphs/registry.py) when `GRAFLOW_PERSISTENCE_BACKEND` is set to `'django'`.
+These implementations are used in [`graflow/models/registry.py`](../models/registry.py) when `GRAFLOW_PERSISTENCE_BACKEND` is set to `'django'`.
 
 ## Node Cache
 
@@ -39,13 +39,13 @@ With proper time-to-live settings and ensuring that all significant parts of the
 
 With expensive LLM calls in mind, we implemented **DjangoCache** ([`graflow/storage/cache.py`](../storage/cache.py)), a PostgreSQL-based node cache that provides persistence and can be shared across multiple application instances. It extends [`BaseCache`](https://github.com/langchain-ai/langgraph/blob/main/libs/langgraph/langgraph/cache/base.py) from LangGraph.
 
-See the implementation in [`graflow/storage/cache.py`](../storage/cache.py) and its usage in [`graflow/graphs/registry.py`](../graphs/registry.py).
+See the implementation in [`graflow/storage/cache.py`](../storage/cache.py) and its usage in [`graflow/models/registry.py`](../models/registry.py).
 
 ## Django Models
 
 To support these three storage mechanisms with Django models, we added new models that match LangGraph's table definitions. This allows you to use Django's ORM to query and manage checkpoints, store entries, and cache entries directly.
 
-The models are defined in [`graflow/models.py`](../models.py):
+The models are defined in [`graflow/models/langgraph.py`](../models/langgraph.py):
 - `Checkpoint`: Stores graph state checkpoints (matches LangGraph's checkpoint table structure)
 - `Store`: Stores key-value pairs for long-term memory (matches LangGraph's store table structure)
 - `CacheEntry`: Stores cached node outputs (matches LangGraph's cache table structure)
@@ -55,7 +55,7 @@ These models enable:
 - **ORM queries**: Query checkpoints, store entries, and cache entries using Django's ORM
 - **Debugging and tracing**: Inspect flow state, store values, and cache hits/misses
 
-See the model definitions in [`graflow/models.py`](../models.py) and test examples in:
-- [`graflow/tests/test_checkpoint.py`](../tests/test_checkpoint.py) - DjangoSaver tests
+See the model definitions in [`graflow/models/langgraph.py`](../models/langgraph.py) and test examples in:
+- [`graflow/tests/test_checkpointer.py`](../tests/test_checkpointer.py) - DjangoSaver tests
 - [`graflow/tests/test_store.py`](../tests/test_store.py) - DjangoStore tests
 - [`graflow/tests/test_cache.py`](../tests/test_cache.py) - DjangoCache tests

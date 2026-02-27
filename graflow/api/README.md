@@ -33,7 +33,7 @@ updated YAML alongside your change so reviewers can spot API diffs easily.
 | `/flows/{id}/cancel/` | `POST` | Cancel a flow (terminal action). |
 | `/flows/stats/` | `GET` | Aggregated counts by status/type. |
 | `/flows/most-recent/` | `GET` | Fetch the latest flow (optionally filtered by status or type). |
-| `/flow-types/` | `GET` | Enumerate registered flow types. Filtered to the authenticated user’s graphs. |
+| `/flow-types/` | `GET` | Enumerate active registered flow types. |
 
 All endpoints require authentication unless `GRAFLOW_REQUIRE_AUTHENTICATION`
 is set to `False`.
@@ -61,4 +61,3 @@ npx redoc-cli bundle docs/flows-api.schema.yml -o docs/flows-api.html
 
 Commit the resulting `docs/flows-api.html` if you want a browsable artifact in
 CI, or generate it ad hoc when you need to inspect the contract locally.
-

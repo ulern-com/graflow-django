@@ -1,6 +1,10 @@
-# Graflow Django
+# Graflow (Django App)
 
-This is a Django app plus a reference Django project that has a simple flows API built on top of [Django REST Framework](https://www.django-rest-framework.org/) and [LangGraph](https://langchain-ai.github.io/langgraph/). It's A WAY to build and run stateful, long-running, and interactive workflows (flows) in a multi-tenant environment.
+Graflow is a reusable Django app that exposes a flows API on top of
+[Django REST Framework](https://www.django-rest-framework.org/) and
+[LangGraph](https://langchain-ai.github.io/langgraph/). It helps you build and
+run stateful, long-running, interactive workflows (flows) in a multi-tenant
+environment.
 
 ## Highlights
 
@@ -18,8 +22,8 @@ This is a Django app plus a reference Django project that has a simple flows API
 ```
 graflow-django/
 ├── graflow/                # Reusable app with models, API, graphs, and storage backends
-├── myflows/                # Reference Django project wiring the app + DRF
-├── manage.py               # Standard Django entry point
+├── myflows/                # Reference Django project (demo)
+├── docs/                   # Documentation for the app
 ├── pyproject.toml          # Project metadata, dependencies, tooling config
 ├── README.md               # You are here
 └── LICENCE                 # Project licence (MIT-compatible)
@@ -29,95 +33,26 @@ graflow-django/
 
 ## Requirements
 
-You need Python **3.12+** (project currently targets 3.13). You can install all required Python packages using pip command. See **Quick Start** section. You also need API keys if you are using LLM calls in your flows.
+You need Python **3.12+** (project currently targets 3.13). If you use the
+PostgreSQL persistence backend, you also need a PostgreSQL database.
 
----
-
-## Quick Start
-
-To get the idea, you can run this Django project like other Django project. If you want to use the Django app as a 3rd party app in your own Django project, see the **Configuration** sectioin.
+## Installation (App Only)
 
 ```bash
-git clone https://github.com/ulern-com/graflow-django.git
-cd graflow-django
-
-python -m venv .venv
-source .venv/bin/activate
-
-# Install with PostgreSQL support (required for production)
+pip install graflow-django  # when published
+# or local editable install
 pip install -e ".[dev,postgres]"
-
-# Start PostgreSQL (using Docker Compose)
-docker-compose up -d
-
-# Or use your own PostgreSQL instance and configure DB_* environment variables
-# Create .env file with your database credentials:
-# DB_NAME=myflows
-# DB_USER=postgres
-# DB_PASSWORD=postgres
-# DB_HOST=127.0.0.1  # Use 127.0.0.1 (not localhost) to avoid IPv6 connection issues
-# DB_PORT=5432
-
-python manage.py migrate
-python manage.py createsuperuser  # optional, for admin access
-python manage.py runserver
 ```
 
-Visit `http://localhost:8000/api/graflow/flows/` to explore the DRF browsable API.
+Add `graflow` to `INSTALLED_APPS`, run migrations, and configure:
 
-**Note:** This project requires PostgreSQL to demonstrate the full benefits of graflow's storage, cache, and checkpoint implementations. SQLite is not supported for the Django persistence backend.
+```python
+GRAFLOW_APP_NAME = "myapp"
+GRAFLOW_PERSISTENCE_BACKEND = "django"  # or "memory"
+GRAFLOW_REQUIRE_AUTHENTICATION = True
+```
 
-Also note that to run a flow with LLM call, you need to set your own API key in the environment.
-
----
-
-## Configuration
-
-All settings of this Django project live in `myflows/settings.py`. Environment-specific overrides can be provided via `.env`.
-
-### Database Configuration
-
-The project uses PostgreSQL by default. Configure it via environment variables:
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `DB_NAME` | `myflows` | PostgreSQL database name |
-| `DB_USER` | `postgres` | PostgreSQL user |
-| `DB_PASSWORD` | `postgres` | PostgreSQL password |
-| `DB_HOST` | `127.0.0.1` | PostgreSQL host (use 127.0.0.1, not localhost, to avoid IPv6 issues) |
-| `DB_PORT` | `5432` | PostgreSQL port |
-| `DB_SSLMODE` | `disable` | SSL mode for connection |
-
-### Graflow Configuration
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `GRAFLOW_APP_NAME` | `myflows` | Logical namespace for graphs and flows |
-| `GRAFLOW_PERSISTENCE_BACKEND` | `django` | `django` (requires PostgreSQL) or `memory` for testing |
-| `GRAFLOW_NODE_CACHE_TTL` | 2592000 (30 days) | Cache TTL for LangGraph node results |
-| `GRAFLOW_REQUIRE_AUTHENTICATION` | `True` | Require authentication for API access |
-Tests default to the in-memory backend so they run without PostgreSQL. Production must use PostgreSQL to enable the Django store, cache, and checkpointer implementations.
-
-### Flow Type Registration
-
-Flow types (graphs) are registered via the Django admin interface using the `FlowType` model. This provides a database-backed registry that supports multi-tenancy, versioning, and per-flow-type permissions/throttling.
-
-To register a flow type:
-1. Go to the Django admin interface
-2. Navigate to "Flow Types"
-3. Click "Add Flow Type"
-4. Fill in the required fields:
-   - `app_name`: Application name (for multi-tenancy)
-   - `flow_type`: Type identifier (e.g., "hello_world")
-   - `version`: Version string (e.g., "v1", "1.0.0")
-   - `builder_path`: String path to builder function (e.g., "myapp.graphs:build_graph")
-   - `state_path`: String path to state class (e.g., "myapp.graphs:GraphState")
-   - `is_latest`: Whether this is the latest version
-   - `is_active`: Whether this flow type is active
-
-You can also configure permissions and throttling per flow type by specifying class paths (e.g., "myapp.permissions:CustomPermission"). See the [Permissions and Throttling](#permissions-and-throttling) section below for details.
-
----
+See `docs/README.md` for full configuration and usage.
 
 ## Permissions and Throttling
 
@@ -176,7 +111,7 @@ disappears from subsequent responses. Pick the endpoint that matches your UX nee
 
 ---
 
-## Persistence For Stateful Flows
+## Persistence for Stateful Flows
 
 Need to understand how the Django-based checkpointer, store, and cache work? Head over to `graflow/storage/README.md`. It documents:
 
@@ -197,6 +132,15 @@ Referencing that file keeps these docs close to the storage code so they stay ac
   source .venv/bin/activate
   python manage.py spectacular --file docs/flows-api.schema.yml --format openapi
   ```
+
+## Demo Project
+
+The reference Django project lives in `myflows/`. See
+`myflows/README.md` for setup and runtime instructions.
+
+## Development
+
+Development and testing notes live in `docs/DEVELOPMENT.md`.
 
   Commit the updated schema (and optional HTML exports) so API changes are visible in PRs without running the dev server.
 
