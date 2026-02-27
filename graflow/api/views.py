@@ -3,9 +3,11 @@ import logging
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiExample, OpenApiParameter, OpenApiResponse, extend_schema
+from django.utils.module_loading import import_string
 from rest_framework import decorators, status, viewsets
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.settings import api_settings
 
 from graflow.api.serializers import (
     FlowCreateSerializer,
@@ -168,8 +170,8 @@ class FlowViewSet(viewsets.GenericViewSet):
                             return [throttle]
                 except Flow.DoesNotExist:
                     pass
-            # Fallback to default (no specific throttle for these actions)
-            return []
+            # Fallback to default throttles
+            return self._get_default_throttles()
 
         # For list and most_recent: if flow_type query param exists, use that FlowType's throttle
         if action in ["list", "most_recent"]:
@@ -184,11 +186,24 @@ class FlowViewSet(viewsets.GenericViewSet):
                     throttle = flow_type_obj.get_throttle_instance("crud")
                     if throttle:
                         return [throttle]
-            # If no flow_type param, use default (no specific throttle)
-            return []
+            # If no flow_type param, use default throttles
+            return self._get_default_throttles()
 
-        # Default: no throttling (or could return default throttles)
-        return []
+        # Default: fall back to DRF defaults
+        return self._get_default_throttles()
+
+    @staticmethod
+    def _get_default_throttles():
+        """Instantiate throttles from current DRF settings."""
+        classes = getattr(settings, "REST_FRAMEWORK", {}).get(
+            "DEFAULT_THROTTLE_CLASSES", api_settings.DEFAULT_THROTTLE_CLASSES
+        )
+        throttles = []
+        for throttle in classes:
+            if isinstance(throttle, str):
+                throttle = import_string(throttle)
+            throttles.append(throttle())
+        return throttles
 
     def get_base_queryset(self, *, include_cancelled: bool = False):
         """

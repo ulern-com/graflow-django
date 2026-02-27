@@ -179,46 +179,105 @@ class ThrottlingTest(APITestCase):
         # We test that throttling is in place by checking at least some succeed
         self.assertTrue(True)  # Basic structure test
 
-    def test_retrieve_no_throttle_by_default(self):
-        """Test that retrieve action has no throttling by default."""
+    @override_settings(
+        REST_FRAMEWORK={
+            "DEFAULT_THROTTLE_CLASSES": [
+                "graflow.tests.test_throttling.TestLowRateCRUDThrottle"
+            ],
+            "DEFAULT_THROTTLE_RATES": {"test_crud_low_rate": "2/minute"},
+        }
+    )
+    def test_retrieve_uses_default_throttle(self):
+        """Test that retrieve action uses DRF default throttles when no custom throttle."""
         flow = FlowFactory.create(
             user=self.user1, flow_type="default_throttle", app_name="test_app"
         )
 
         url = reverse("graflow:flow-detail", kwargs={"pk": flow.id})
 
-        # Make many requests - should all succeed (no throttling)
-        for _ in range(10):
+        # First 2 requests should succeed
+        for _ in range(2):
             response = self.client.get(url)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    def test_destroy_no_throttle_by_default(self):
-        """Test that destroy action has no throttling by default."""
-        # Create multiple flows to destroy
+        # Next request should be throttled
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+
+    @override_settings(
+        REST_FRAMEWORK={
+            "DEFAULT_THROTTLE_CLASSES": [
+                "graflow.tests.test_throttling.TestLowRateCRUDThrottle"
+            ],
+            "DEFAULT_THROTTLE_RATES": {"test_crud_low_rate": "2/minute"},
+        }
+    )
+    def test_destroy_uses_default_throttle(self):
+        """Test that destroy action uses DRF default throttles when no custom throttle."""
         flows = [
             FlowFactory.create(user=self.user1, flow_type="default_throttle", app_name="test_app")
-            for _ in range(5)
+            for _ in range(3)
         ]
 
-        # Destroy all - should all succeed (no throttling)
-        for flow in flows:
+        # First 2 should succeed
+        for flow in flows[:2]:
             url = reverse("graflow:flow-detail", kwargs={"pk": flow.id})
             response = self.client.delete(url)
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-    def test_list_no_throttle_by_default(self):
-        """Test that list action has no throttling by default (when no flow_type param)."""
-        # Create some flows
+        # Third should be throttled
+        url = reverse("graflow:flow-detail", kwargs={"pk": flows[2].id})
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+
+    @override_settings(
+        REST_FRAMEWORK={
+            "DEFAULT_THROTTLE_CLASSES": [
+                "graflow.tests.test_throttling.TestLowRateCRUDThrottle"
+            ],
+            "DEFAULT_THROTTLE_RATES": {"test_crud_low_rate": "2/minute"},
+        }
+    )
+    def test_list_uses_default_throttle(self):
+        """Test that list action uses DRF default throttles when no custom throttle."""
         FlowFactory.create_batch(
             3, user=self.user1, flow_type="default_throttle", app_name="test_app"
         )
 
         url = reverse("graflow:flow-list")
 
-        # Make many requests - should all succeed (no throttling)
-        for _ in range(10):
+        # First 2 should succeed
+        for _ in range(2):
             response = self.client.get(url)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Third should be throttled
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+
+    @override_settings(
+        REST_FRAMEWORK={
+            "DEFAULT_THROTTLE_CLASSES": [
+                "graflow.tests.test_throttling.TestLowRateCRUDThrottle"
+            ],
+            "DEFAULT_THROTTLE_RATES": {"test_crud_low_rate": "2/minute"},
+        }
+    )
+    def test_most_recent_uses_default_throttle(self):
+        """Test that most_recent uses DRF default throttles when no custom throttle."""
+        flow = FlowFactory.create(user=self.user1, flow_type="default_throttle", app_name="test_app")
+        flow.resume({"user_id": self.user1.id, "flow_id": flow.id})
+
+        url = reverse("graflow:flow-most-recent")
+
+        # First 2 should succeed
+        for _ in range(2):
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Third should be throttled
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
 
     # ==================== Custom CRUD Throttling Tests ====================
 
