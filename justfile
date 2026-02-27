@@ -34,6 +34,10 @@ test:
 test-cov:
     pytest --cov=graflow --cov-report=html --cov-report=term
 
+# Run tests with coverage using Docker Postgres defaults (for sandboxed environments)
+sandbox-test-cov:
+    DB_USER=postgres DB_PASSWORD=postgres DB_HOST=127.0.0.1 DB_PORT=5432 DB_NAME=myflows pytest --cov=graflow --cov-report=html --cov-report=term
+
 # Clean up temporary files
 clean:
     find . -type f -name "*.pyc" -delete
@@ -55,4 +59,3 @@ runserver:
 
 shell:
     python manage.py shell
-

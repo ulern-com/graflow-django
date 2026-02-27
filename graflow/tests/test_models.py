@@ -148,6 +148,20 @@ class FlowModelTest(TestCase):
         self.assertNotEqual(flow.status, Flow.STATUS_PENDING)
         self.assertNotEqual(flow.status, Flow.STATUS_RUNNING)  # Should have finished
 
+    def test_resume_rejects_terminal_state(self):
+        """Resume should fail for terminal flows."""
+        flow = FlowFactory.create(user=self.user1, status=Flow.STATUS_COMPLETED)
+        with self.assertRaises(ValueError) as context:
+            flow.resume({"user_id": self.user1.id, "flow_id": flow.id})
+        self.assertIn("terminal", str(context.exception))
+
+    def test_resume_rejects_running_state(self):
+        """Resume should fail for running flows."""
+        flow = FlowFactory.create(user=self.user1, status=Flow.STATUS_RUNNING)
+        with self.assertRaises(ValueError) as context:
+            flow.resume({"user_id": self.user1.id, "flow_id": flow.id})
+        self.assertIn("running", str(context.exception))
+
     def test_str_representation_with_user(self):
         """Test string representation includes user info."""
         flow = FlowFactory.create(user=self.user1)

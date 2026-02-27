@@ -835,7 +835,7 @@ class FlowsAPITest(APITestCase):
     # ==================== Resumability Validation Tests ====================
 
     def test_resume_completed_flow(self):
-        """Test resuming a completed flow - resume doesn't validate terminal state."""
+        """Test resuming a completed flow - should return 400."""
         flow = FlowFactory.create(user=self.user1)
         flow.resume({"user_id": self.user1.id, "flow_id": flow.id})
         flow.resume({"user_id": self.user1.id, "flow_id": flow.id})  # Complete
@@ -843,9 +843,18 @@ class FlowsAPITest(APITestCase):
         url = reverse("graflow:flow-resume", kwargs={"pk": flow.id})
         response = self.client.post(url, {"counter": 10}, format="json")
 
-        # Resume doesn't check terminal state, so it attempts to resume
-        # The actual behavior depends on the graph implementation
-        self.assertIn(response.status_code, [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST])
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("error", response.data)
+
+    def test_resume_running_flow(self):
+        """Test resuming a running flow - should return 400."""
+        flow = FlowFactory.create(user=self.user1, status=Flow.STATUS_RUNNING)
+
+        url = reverse("graflow:flow-resume", kwargs={"pk": flow.id})
+        response = self.client.post(url, {"counter": 10}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("error", response.data)
 
     def test_resume_cancelled_flow(self):
         """Test resuming a cancelled flow - returns 404 since cancelled flows are excluded."""

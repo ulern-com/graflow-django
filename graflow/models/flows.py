@@ -463,6 +463,11 @@ class Flow(models.Model):
         Raises:
             Exception: If graph execution fails (status set to FAILED)
         """
+        if self.is_terminal():
+            raise ValueError(f"Cannot resume flow in terminal state: {self.status}")
+        if self.status == Flow.STATUS_RUNNING:
+            raise ValueError("Cannot resume flow while it is running")
+
         config = {
             "configurable": {"thread_id": str(self.pk)},
             "recursion_limit": 100,
