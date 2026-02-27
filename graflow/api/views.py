@@ -480,8 +480,8 @@ class FlowViewSet(viewsets.GenericViewSet):
         Create a new flow instance.
 
         Validates the flow_type, creates the flow, and executes it until
-        completion or an interrupt point. If initialization fails, the flow
-        is automatically cancelled and an error is returned.
+        completion or an interrupt point. If initialization fails, an error
+        is returned and the flow remains failed.
         """
         # Use serializer for input validation and schema
         serializer = FlowCreateSerializer(data=request.data)
@@ -809,7 +809,7 @@ class FlowViewSet(viewsets.GenericViewSet):
 
         Returns counts by status and by flow type.
         """
-        flows = self.get_base_queryset()
+        flows = self.get_base_queryset(include_cancelled=True)
 
         # Get distinct flow types for this user
         flow_types = flows.values_list("flow_type", flat=True).distinct()

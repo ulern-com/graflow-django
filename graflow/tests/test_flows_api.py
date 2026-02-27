@@ -998,12 +998,12 @@ class FlowsAPITest(APITestCase):
         self.assertIn("by_status", response.data)
         self.assertIn("by_type", response.data)
 
-        # Verify counts - cancelled flows are excluded from queryset
+        # Verify counts include cancelled flows
         # Check that counts increased by at least the expected amounts (accounting for other tests)
         # Note: flow2 might not complete immediately, so we check for at least the interrupted flow
         self.assertGreaterEqual(
             response.data["total"], initial_total + 1
-        )  # At least flow1, flow3 excluded
+        )  # At least flow1
         self.assertGreaterEqual(
             response.data["by_status"]["interrupted"], initial_interrupted + 1
         )  # flow1
@@ -1011,15 +1011,17 @@ class FlowsAPITest(APITestCase):
         self.assertGreaterEqual(
             response.data["by_status"]["completed"], initial_completed
         )  # flow2 may or may not complete
-        self.assertEqual(response.data["by_status"]["cancelled"], 0)  # Cancelled flows excluded
+        self.assertGreaterEqual(
+            response.data["by_status"]["cancelled"], 1
+        )  # flow3 cancelled
 
-        # Verify by_type - cancelled flow is excluded
+        # Verify by_type includes cancelled flows
         # At least flow1 should be counted (flow2 might not complete)
         self.assertGreaterEqual(
             response.data["by_type"]["test_flow"], initial_test_flow + 1
         )  # At least flow1
-        # minimal_test_graph flow was cancelled, so it's excluded from stats
-        self.assertNotIn("minimal_test_flow", response.data["by_type"])
+        # minimal_test_graph flow was cancelled, so it should still be counted
+        self.assertIn("minimal_test_flow", response.data["by_type"])
 
         # Verify the interrupted flow we created is in the stats
         self.assertGreaterEqual(response.data["by_status"]["interrupted"], 1)
