@@ -761,13 +761,34 @@ class FlowsAPITest(APITestCase):
         flow = FlowFactory.create(user=self.user1)
         flow.cancel()
 
-        # Filter by cancelled status - should return empty since cancelled flows are excluded
+        # Filter by cancelled status - should return cancelled flows
         url = reverse("graflow:flow-list") + "?status=cancelled"
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # Cancelled flows are excluded from the queryset, so filtering by cancelled returns empty
-        self.assertEqual(len(response.data), 0)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["status"], "cancelled")
+
+    def test_list_flows_filter_by_status_all_includes_cancelled(self):
+        """Test listing flows with status=all includes cancelled."""
+        flow1 = FlowFactory.create(user=self.user1)
+        flow1.resume({"user_id": self.user1.id, "flow_id": flow1.id})
+
+        flow2 = FlowFactory.create(user=self.user1)
+        flow2.resume({"user_id": self.user1.id, "flow_id": flow2.id})
+        flow2.resume({"user_id": self.user1.id, "flow_id": flow2.id})
+
+        flow3 = FlowFactory.create(user=self.user1)
+        flow3.cancel()
+
+        url = reverse("graflow:flow-list") + "?status=all"
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        statuses = {flow["status"] for flow in response.data}
+        self.assertIn("interrupted", statuses)
+        self.assertIn("completed", statuses)
+        self.assertIn("cancelled", statuses)
 
     def test_list_flows_default_shows_only_in_progress(self):
         """Test that list without status filter shows only in-progress flows."""
@@ -1127,15 +1148,31 @@ class FlowsAPITest(APITestCase):
         flow2 = FlowFactory.create(user=self.user1)
         flow2.resume({"user_id": self.user1.id, "flow_id": flow2.id})
         flow2.resume({"user_id": self.user1.id, "flow_id": flow2.id})
+        flow2.mark_cancelled()
 
         # Get most recent with status=all (should include completed)
         url = reverse("graflow:flow-most-recent") + "?status=all"
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # flow2 should be more recent since it was created later
+        # flow2 should be more recent and cancelled
         self.assertEqual(response.data["id"], flow2.id)
-        self.assertEqual(response.data["status"], "completed")
+        self.assertEqual(response.data["status"], "cancelled")
+
+    def test_most_recent_with_status_cancelled(self):
+        """Test most recent with status=cancelled returns cancelled flow."""
+        flow1 = FlowFactory.create(user=self.user1)
+        flow1.resume({"user_id": self.user1.id, "flow_id": flow1.id})
+
+        flow2 = FlowFactory.create(user=self.user1)
+        flow2.cancel()
+
+        url = reverse("graflow:flow-most-recent") + "?status=cancelled"
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["id"], flow2.id)
+        self.assertEqual(response.data["status"], "cancelled")
 
     # ==================== Combined Filtering Tests ====================
 

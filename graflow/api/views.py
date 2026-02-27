@@ -190,14 +190,22 @@ class FlowViewSet(viewsets.GenericViewSet):
         # Default: no throttling (or could return default throttles)
         return []
 
-    def get_queryset(self):
+    def get_base_queryset(self, *, include_cancelled: bool = False):
         """
         Ensure users can only access their own flows.
         When authentication is disabled, return all flows with user=None.
         """
         if not self.request.user.is_authenticated:
-            return Flow.objects.filter(user=None).exclude(status=Flow.STATUS_CANCELLED)
-        return Flow.objects.filter(user=self.request.user).exclude(status=Flow.STATUS_CANCELLED)
+            queryset = Flow.objects.filter(user=None)
+        else:
+            queryset = Flow.objects.filter(user=self.request.user)
+
+        if include_cancelled:
+            return queryset
+        return queryset.exclude(status=Flow.STATUS_CANCELLED)
+
+    def get_queryset(self):
+        return self.get_base_queryset()
 
     def get_object(self):
         """
@@ -332,7 +340,8 @@ class FlowViewSet(viewsets.GenericViewSet):
         is_detailed = request.query_params.get("is_detailed", "false").lower() == "true"
 
         # Start with user's flows
-        flows = self.get_queryset()
+        include_cancelled = status_filter in ["all", "cancelled"]
+        flows = self.get_base_queryset(include_cancelled=include_cancelled)
 
         # Filter by status (default to in-progress flows)
         if status_filter:
@@ -785,7 +794,7 @@ class FlowViewSet(viewsets.GenericViewSet):
 
         Returns counts by status and by flow type.
         """
-        flows = self.get_queryset()
+        flows = self.get_base_queryset()
 
         # Get distinct flow types for this user
         flow_types = flows.values_list("flow_type", flat=True).distinct()
@@ -864,10 +873,10 @@ class FlowViewSet(viewsets.GenericViewSet):
           - status: filter by status (defaults to in-progress flows if omitted; "
           "use \"all\" for no status filter)
         """
-        flows = self.get_queryset()
-
         flow_type = request.query_params.get("flow_type")
         status_filter = request.query_params.get("status")
+        include_cancelled = status_filter in ["all", "cancelled"]
+        flows = self.get_base_queryset(include_cancelled=include_cancelled)
 
         # Apply status filter (default: in-progress)
         if status_filter:
