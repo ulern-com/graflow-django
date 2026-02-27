@@ -76,6 +76,7 @@ class FlowsAPITest(APITestCase):
         self.assertEqual(response.data["flow_type"], "test_graph")
         self.assertIn("id", response.data)
         self.assertIn("state", response.data)
+        self.assertEqual(response.data["status"], "completed")
 
         # Verify state structure and cleanliness
         state = response.data["state"]
@@ -145,7 +146,7 @@ class FlowsAPITest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertIn("state", response.data)
 
-        # Flow should be interrupted after double-resume (waiting for actual input)
+        # Flow should be interrupted waiting for actual input
         self.assertEqual(response.data["status"], "interrupted")
 
         # State should be minimal (just the interrupt marker)

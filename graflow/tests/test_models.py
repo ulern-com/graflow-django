@@ -266,9 +266,9 @@ class FlowQuerySetTest(TestCase):
         flow = FlowFactory.create(user=self.user1)
         flow.resume({"user_id": self.user1.id, "flow_id": flow.id, "counter": 42})
 
-        # Filter flows by state counter
+        # Graph increments counter once before completing
         all_flows = Flow.objects.filter(user=self.user1)
-        filtered = all_flows.filter_by_state(counter=42)
+        filtered = all_flows.filter_by_state(counter=43)
         self.assertEqual(len(filtered), 1)
         self.assertEqual(filtered[0].id, flow.id)
 
@@ -283,9 +283,9 @@ class FlowQuerySetTest(TestCase):
         }
         flow.resume(state)
 
-        # Filter by nested field (note: user_id and flow_id are cleaned from state)
+        # Graph overwrites nested_data based on branch choice (default left) and counter
         all_flows = Flow.objects.filter(user=self.user1)
-        filtered = all_flows.filter_by_state(nested_data__nested__value="test")
+        filtered = all_flows.filter_by_state(nested_data__branch="left", nested_data__value=3)
         self.assertEqual(len(filtered), 1)
         self.assertEqual(filtered[0].id, flow.id)
 
@@ -312,9 +312,9 @@ class FlowQuerySetTest(TestCase):
             }
         )
 
-        # Filter by both counter and branch_choice
+        # Graph increments counter once before completing
         all_flows = Flow.objects.filter(user=self.user1)
-        filtered = all_flows.filter_by_state(counter=5, branch_choice="left")
+        filtered = all_flows.filter_by_state(counter=6, branch_choice="left")
         self.assertEqual(len(filtered), 1)
         self.assertEqual(filtered[0].id, flow1.id)
 
@@ -338,9 +338,9 @@ class FlowQuerySetTest(TestCase):
         flow = FlowFactory.create(user=self.user1)
         flow.resume({"user_id": self.user1.id, "flow_id": flow.id, "counter": 42})
 
-        # Filter with string "42" should match integer 42
+        # Graph increments counter once before completing
         all_flows = Flow.objects.filter(user=self.user1)
-        filtered = all_flows.filter_by_state(counter="42")
+        filtered = all_flows.filter_by_state(counter="43")
         self.assertEqual(len(filtered), 1)
 
     def test_filter_by_state_empty_filters(self):

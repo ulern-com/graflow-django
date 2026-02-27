@@ -38,19 +38,39 @@ class TestGraphState(BaseGraphState):  # noqa: N801
     )
 
 
+def _has_user_input(state: TestGraphState) -> bool:
+    """Return True if state contains user-provided inputs beyond defaults."""
+    if state.initial_input_received:
+        return True
+    if state.counter != 0:
+        return True
+    if state.branch_choice != "left":
+        return True
+    if state.max_iterations != 3:
+        return True
+    if state.nested_data:
+        return True
+    if state.should_pause:
+        return True
+    if state.messages:
+        return True
+    return False
+
+
 def node_initialize(state: TestGraphState) -> dict:
     """
     Initialize state with input data.
-    Interrupts on first invocation (when only flow-level data is present) to get actual user input.
-    This supports the double-resume pattern in the API.
+    Interrupts only when no user input is present to request required fields.
     """
-    # If this is the first invocation (no initial input received yet), interrupt
-    if not state.initial_input_received:
-        # Mark that we've now received the first call and interrupt for user input
+    if not _has_user_input(state):
+        # No user input yet: interrupt to request it
         return interrupt({"initial_input_received": True})
 
-    # Real initialization after user provides input (or on second resume)
-    update: dict[str, Any] = {"messages": state.messages + ["initialized"]}
+    # Real initialization after user provides input (or on first resume with inputs)
+    update: dict[str, Any] = {
+        "messages": state.messages + ["initialized"],
+        "initial_input_received": True,
+    }
     if state.counter == 0 and not state.messages:  # Default value, not explicitly set
         update["counter"] = 0
     return update
