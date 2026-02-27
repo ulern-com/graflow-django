@@ -118,6 +118,20 @@ class FlowsAPITest(APITestCase):
         self.assertEqual(state["nested_data"]["branch"], "left")
         self.assertEqual(state["max_iterations"], 5)
 
+    def test_create_flow_ignores_client_flow_metadata(self):
+        """Test that user_id/flow_id in input are ignored."""
+        url = reverse("graflow:flow-list")
+        data = {
+            "flow_type": "test_graph",
+            "state": {"user_id": 999, "flow_id": 999, "counter": 1},
+        }
+        response = self.client.post(url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        state = response.data["state"]
+        # flow-level metadata should be cleaned from state
+        self.assertNotIn("user_id", state)
+        self.assertNotIn("flow_id", state)
     def test_create_flow_invalid_type(self):
         """Test creating flow with invalid flow_type."""
         url = reverse("graflow:flow-list")

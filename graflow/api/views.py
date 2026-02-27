@@ -510,11 +510,11 @@ class FlowViewSet(viewsets.GenericViewSet):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Start the flow with a single initial state (merge metadata + optional input)
+            # Start the flow with a single initial state (merge input + force metadata)
             user_id = request.user.id if request.user.is_authenticated else None
-            state = {"user_id": user_id, "flow_id": flow.id}
-            if validated_data.get("state"):
-                state.update(validated_data["state"])
+            state = dict(validated_data.get("state") or {})
+            state["user_id"] = user_id
+            state["flow_id"] = flow.id
             self._resume_flow(flow, state)
         except Exception as e:
             # Clean up the flow if initialization fails
