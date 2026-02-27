@@ -59,7 +59,7 @@ class Command(BaseCommand):
         try:
             # Get app_name
             app_name = options["app_name"] or getattr(settings, "GRAFLOW_APP_NAME", "graflow")
-            
+
             # Get the flow type
             if options["graph_version"]:
                 try:
@@ -77,7 +77,7 @@ class Command(BaseCommand):
                 flow_type_obj = FlowType.objects.get_latest(app_name, graph_name)
                 if not flow_type_obj:
                     raise CommandError(f"Graph '{graph_name}' not found in app '{app_name}'")
-            
+
             # Get the graph
             graph = flow_type_obj.get_graph()
 
@@ -111,8 +111,7 @@ class Command(BaseCommand):
             is_latest = flow_type.is_latest
             status = " (latest)" if is_latest else ""
             self.stdout.write(
-                f"  {flow_type.app_name}:{flow_type.flow_type}:"
-                f"{flow_type.version}{status}"
+                f"  {flow_type.app_name}:{flow_type.flow_type}:" f"{flow_type.version}{status}"
             )
 
     def create_visualization(self, graph, graph_name, version, output_dir, format="png"):

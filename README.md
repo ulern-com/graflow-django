@@ -213,6 +213,10 @@ Then
 just test
 ```
 
+Note: If you run tests from a sandboxed environment (such as Codex), you may need elevated
+permissions to access Docker's published ports (e.g., `127.0.0.1:5432`). Running tests directly
+in your local terminal avoids this issue.
+
 Or with coverage:
 
 ```bash

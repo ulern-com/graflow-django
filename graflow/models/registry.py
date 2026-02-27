@@ -45,9 +45,7 @@ def _import_from_string(path: str):
     except ImportError as e:
         raise ValueError(f"Failed to import module '{module_path}': {e}") from e
     except AttributeError as e:
-        raise ValueError(
-            f"Module '{module_path}' has no attribute '{attr_name}'"
-        ) from e
+        raise ValueError(f"Module '{module_path}' has no attribute '{attr_name}'") from e
 
 
 class FlowTypeQuerySet(models.QuerySet):
@@ -213,9 +211,7 @@ class FlowType(models.Model):
         """
         builder_func = _import_from_string(self.builder_path)
         if not callable(builder_func):
-            raise ValueError(
-                f"Builder path '{self.builder_path}' does not resolve to a callable"
-            )
+            raise ValueError(f"Builder path '{self.builder_path}' does not resolve to a callable")
         return builder_func
 
     def get_state_definition(self) -> type[BaseModel]:
@@ -283,7 +279,8 @@ class FlowType(models.Model):
         from rest_framework.permissions import AllowAny, IsAuthenticated
 
         permission_path = (
-            self.resume_permission_class if permission_type == "resume"
+            self.resume_permission_class
+            if permission_type == "resume"
             else self.crud_permission_class
         )
 
@@ -315,8 +312,7 @@ class FlowType(models.Model):
             Throttle instance (DRF BaseThrottle), or None if not configured
         """
         throttle_path = (
-            self.resume_throttle_class if throttle_type == "resume"
-            else self.crud_throttle_class
+            self.resume_throttle_class if throttle_type == "resume" else self.crud_throttle_class
         )
 
         if not throttle_path or not throttle_path.strip():

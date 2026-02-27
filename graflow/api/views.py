@@ -71,9 +71,7 @@ class FlowViewSet(viewsets.GenericViewSet):
         # For create action, get flow_type from request data
         if action == "create":
             flow_type = (
-                self.request.data.get("flow_type")
-                if hasattr(self.request, "data")
-                else None
+                self.request.data.get("flow_type") if hasattr(self.request, "data") else None
             )
             if flow_type:
                 flow_type_obj = FlowType.objects.get_latest(app_name, flow_type)
@@ -146,9 +144,7 @@ class FlowViewSet(viewsets.GenericViewSet):
         # For create action, get flow_type from request data
         if action == "create":
             flow_type = (
-                self.request.data.get("flow_type")
-                if hasattr(self.request, "data")
-                else None
+                self.request.data.get("flow_type") if hasattr(self.request, "data") else None
             )
             if flow_type:
                 flow_type_obj = FlowType.objects.get_latest(app_name, flow_type)
@@ -366,9 +362,8 @@ class FlowViewSet(viewsets.GenericViewSet):
         else:
             flows = list(flows)
 
-        # If flow_type was not in query params, filter by permissions
-        if not flow_type:
-            flows = filter_flows_by_permissions(flows, request, self, permission_type="crud")
+        # Filter by permissions (object-level)
+        flows = filter_flows_by_permissions(flows, request, self, permission_type="crud")
 
         if is_detailed:
             serializer = FlowDetailSerializer(flows, many=True)
@@ -896,9 +891,8 @@ class FlowViewSet(viewsets.GenericViewSet):
         if not isinstance(flows, list):
             flows = list(flows)
 
-        # If flow_type was not in query params, filter by permissions
-        if not flow_type:
-            flows = filter_flows_by_permissions(flows, request, self, permission_type="crud")
+        # Filter by permissions (object-level)
+        flows = filter_flows_by_permissions(flows, request, self, permission_type="crud")
 
         # Get the first (most recent)
         most_recent_flow = flows[0] if flows else None

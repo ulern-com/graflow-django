@@ -756,9 +756,7 @@ class FlowTypeVersioningTest(TestCase):
         )
 
         # All versions should exist
-        versions = FlowType.objects.filter(
-            app_name="test_app", flow_type="test_flow"
-        )
+        versions = FlowType.objects.filter(app_name="test_app", flow_type="test_flow")
         self.assertEqual(versions.count(), 3)
         # Only v2 should be latest
         latest = FlowType.objects.get_latest("test_app", "test_flow")
@@ -858,4 +856,3 @@ class FlowTypeVersioningTest(TestCase):
         v1_refresh = FlowType.objects.get(pk=v1.pk)
         self.assertEqual(v1_refresh.version, "v1")
         self.assertFalse(v1_refresh.is_latest)
-

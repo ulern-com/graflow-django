@@ -28,9 +28,7 @@ class TestLowRateCRUDThrottle(UserRateThrottle):
         """Return a very low rate for testing (2 per minute)."""
         from django.conf import settings
 
-        throttle_rates = getattr(settings, "REST_FRAMEWORK", {}).get(
-            "DEFAULT_THROTTLE_RATES", {}
-        )
+        throttle_rates = getattr(settings, "REST_FRAMEWORK", {}).get("DEFAULT_THROTTLE_RATES", {})
         if self.scope in throttle_rates:
             return throttle_rates[self.scope]
         return "2/minute"
@@ -47,9 +45,7 @@ class TestLowRateResumeThrottle(UserRateThrottle):
         """Return a very low rate for testing (3 per minute)."""
         from django.conf import settings
 
-        throttle_rates = getattr(settings, "REST_FRAMEWORK", {}).get(
-            "DEFAULT_THROTTLE_RATES", {}
-        )
+        throttle_rates = getattr(settings, "REST_FRAMEWORK", {}).get("DEFAULT_THROTTLE_RATES", {})
         if self.scope in throttle_rates:
             return throttle_rates[self.scope]
         return "3/minute"
@@ -134,16 +130,12 @@ class ThrottlingTest(APITestCase):
         """Test that create action uses default FlowCreationThrottle when no custom throttle."""
         # First request should succeed
         url = reverse("graflow:flow-list")
-        response = self.client.post(
-            url, {"flow_type": "default_throttle"}, format="json"
-        )
+        response = self.client.post(url, {"flow_type": "default_throttle"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
         # Make 5 more requests (total 6) - should hit rate limit of 5/minute
         for _ in range(5):
-            response = self.client.post(
-                url, {"flow_type": "default_throttle"}, format="json"
-            )
+            response = self.client.post(url, {"flow_type": "default_throttle"}, format="json")
             # Should succeed (we're at 5 requests, limit is 5/minute)
             self.assertIn(
                 response.status_code,
@@ -151,9 +143,7 @@ class ThrottlingTest(APITestCase):
             )
 
         # Next request should be throttled
-        response = self.client.post(
-            url, {"flow_type": "default_throttle"}, format="json"
-        )
+        response = self.client.post(url, {"flow_type": "default_throttle"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
 
     @override_settings(
@@ -206,9 +196,7 @@ class ThrottlingTest(APITestCase):
         """Test that destroy action has no throttling by default."""
         # Create multiple flows to destroy
         flows = [
-            FlowFactory.create(
-                user=self.user1, flow_type="default_throttle", app_name="test_app"
-            )
+            FlowFactory.create(user=self.user1, flow_type="default_throttle", app_name="test_app")
             for _ in range(5)
         ]
 
@@ -247,15 +235,11 @@ class ThrottlingTest(APITestCase):
 
         # First 2 requests should succeed (limit is 2/minute)
         for _ in range(2):
-            response = self.client.post(
-                url, {"flow_type": "custom_crud_throttle"}, format="json"
-            )
+            response = self.client.post(url, {"flow_type": "custom_crud_throttle"}, format="json")
             self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
         # Next request should be throttled
-        response = self.client.post(
-            url, {"flow_type": "custom_crud_throttle"}, format="json"
-        )
+        response = self.client.post(url, {"flow_type": "custom_crud_throttle"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
 
     @override_settings(
@@ -272,18 +256,14 @@ class ThrottlingTest(APITestCase):
         # Make 2 requests - should succeed
         responses = []
         for _ in range(2):
-            response = self.client.post(
-                url, {"flow_type": "custom_crud_throttle"}, format="json"
-            )
+            response = self.client.post(url, {"flow_type": "custom_crud_throttle"}, format="json")
             responses.append(response.status_code)
 
         # At least first request should succeed
         self.assertIn(status.HTTP_201_CREATED, responses)
 
         # Third request should be throttled
-        response = self.client.post(
-            url, {"flow_type": "custom_crud_throttle"}, format="json"
-        )
+        response = self.client.post(url, {"flow_type": "custom_crud_throttle"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
 
     @override_settings(
@@ -446,28 +426,20 @@ class ThrottlingTest(APITestCase):
 
         # Create with default_throttle - uses default FlowCreationThrottle (100/hour)
         # Should succeed (not hitting limit)
-        response = self.client.post(
-            url, {"flow_type": "default_throttle"}, format="json"
-        )
+        response = self.client.post(url, {"flow_type": "default_throttle"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
         # Create with custom_crud_throttle - uses TestLowRateCRUDThrottle (2/minute)
         # Should succeed first time
-        response = self.client.post(
-            url, {"flow_type": "custom_crud_throttle"}, format="json"
-        )
+        response = self.client.post(url, {"flow_type": "custom_crud_throttle"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
         # Second request with custom throttle should also succeed
-        response = self.client.post(
-            url, {"flow_type": "custom_crud_throttle"}, format="json"
-        )
+        response = self.client.post(url, {"flow_type": "custom_crud_throttle"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
         # Third request with custom throttle should be throttled
-        response = self.client.post(
-            url, {"flow_type": "custom_crud_throttle"}, format="json"
-        )
+        response = self.client.post(url, {"flow_type": "custom_crud_throttle"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
 
     @override_settings(
@@ -540,15 +512,11 @@ class ThrottlingTest(APITestCase):
         # Test CRUD throttle on create
         url = reverse("graflow:flow-list")
         for _ in range(2):
-            response = self.client.post(
-                url, {"flow_type": "custom_both_throttle"}, format="json"
-            )
+            response = self.client.post(url, {"flow_type": "custom_both_throttle"}, format="json")
             self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
         # Should be throttled
-        response = self.client.post(
-            url, {"flow_type": "custom_both_throttle"}, format="json"
-        )
+        response = self.client.post(url, {"flow_type": "custom_both_throttle"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
 
         # Test resume throttle
@@ -585,22 +553,16 @@ class ThrottlingTest(APITestCase):
         # user1 makes 2 requests - should succeed
         self.client.force_authenticate(user=self.user1)
         for _ in range(2):
-            response = self.client.post(
-                url, {"flow_type": "custom_crud_throttle"}, format="json"
-            )
+            response = self.client.post(url, {"flow_type": "custom_crud_throttle"}, format="json")
             self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
         # user1 should be throttled
-        response = self.client.post(
-            url, {"flow_type": "custom_crud_throttle"}, format="json"
-        )
+        response = self.client.post(url, {"flow_type": "custom_crud_throttle"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
 
         # user2 should not be throttled (separate bucket)
         self.client.force_authenticate(user=self.user2)
-        response = self.client.post(
-            url, {"flow_type": "custom_crud_throttle"}, format="json"
-        )
+        response = self.client.post(url, {"flow_type": "custom_crud_throttle"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
     # ==================== Edge Cases ====================
@@ -622,9 +584,7 @@ class ThrottlingTest(APITestCase):
 
         # Should fall back to default throttle (should not raise error)
         # Since we don't have a low default rate configured, it should work
-        response = self.client.post(
-            url, {"flow_type": "invalid_throttle"}, format="json"
-        )
+        response = self.client.post(url, {"flow_type": "invalid_throttle"}, format="json")
         # Should either succeed or throttle, but not error
         self.assertIn(
             response.status_code,
@@ -638,12 +598,9 @@ class ThrottlingTest(APITestCase):
         # Try to create with non-existent flow_type
         # Should fall back to default FlowCreationThrottle
         # (Will fail validation, but throttle check happens first)
-        response = self.client.post(
-            url, {"flow_type": "nonexistent_flow_type"}, format="json"
-        )
+        response = self.client.post(url, {"flow_type": "nonexistent_flow_type"}, format="json")
         # Should fail validation, not throttling
         self.assertIn(
             response.status_code,
             [status.HTTP_400_BAD_REQUEST, status.HTTP_404_NOT_FOUND],
         )
-

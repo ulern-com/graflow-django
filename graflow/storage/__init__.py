@@ -70,4 +70,3 @@ def get_storage_components():
             _checkpointer = MemorySaver()
             _store = InMemoryStore()
     return _node_cache, _checkpointer, _store
-

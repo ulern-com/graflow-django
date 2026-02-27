@@ -1,6 +1,9 @@
+from datetime import UTC
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from django.utils import timezone
 from parameterized import parameterized
 from rest_framework import status
 from rest_framework.permissions import BasePermission
@@ -46,6 +49,20 @@ class AllowOnlyTestGraph2Permission(BasePermission):
         """Check permission for a specific flow object."""
         if isinstance(obj, Flow):
             return obj.flow_type == "auth_default_crud_resume_restricted_to_graph2"
+        return False
+
+
+class AllowOnlyDisplayNamePermission(BasePermission):
+    """Allow access only to flows with display_name='allowed'."""
+
+    def has_permission(self, request, view):
+        """Allow list and other view-level access; enforce object-level rules."""
+        return True
+
+    def has_object_permission(self, request, view, obj):
+        """Allow only objects with display_name='allowed'."""
+        if isinstance(obj, Flow):
+            return obj.display_name == "allowed"
         return False
 
 
@@ -114,6 +131,17 @@ class PermissionsTest(APITestCase):
             is_latest=True,
         )
 
+        # Flow type with object-level permission based on display_name
+        cls.object_filtered_flow_type = FlowType.objects.create(
+            app_name="test_app",
+            flow_type="crud_object_filtered",
+            version="v1",
+            builder_path="graflow.tests.fixtures.test_graph:build_test_graph",
+            state_path="graflow.tests.fixtures.test_graph:TestGraphState",
+            crud_permission_class=("graflow.tests.test_permissions:AllowOnlyDisplayNamePermission"),
+            is_latest=True,
+        )
+
     # ==================== Default Permission Tests (IsAuthenticated) ====================
 
     @parameterized.expand(
@@ -157,9 +185,7 @@ class PermissionsTest(APITestCase):
             self.client.force_authenticate(user=user)
 
         url = reverse("graflow:flow-list")
-        response = self.client.post(
-            url, {"flow_type": "auth_default_crud_resume"}, format="json"
-        )
+        response = self.client.post(url, {"flow_type": "auth_default_crud_resume"}, format="json")
 
         self.assertEqual(response.status_code, expected_status)
 
@@ -225,9 +251,7 @@ class PermissionsTest(APITestCase):
         self.client.force_authenticate(user=self.user1)
 
         url = reverse("graflow:flow-list")
-        response = self.client.post(
-            url, {"flow_type": "crud_restricted_to_graph1"}, format="json"
-        )
+        response = self.client.post(url, {"flow_type": "crud_restricted_to_graph1"}, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
@@ -263,9 +287,7 @@ class PermissionsTest(APITestCase):
         response = self.client.post(url, {"message": "test"}, format="json")
 
         # Should be allowed (might fail for other reasons, but permission should pass)
-        self.assertIn(
-            response.status_code, [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST]
-        )
+        self.assertIn(response.status_code, [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST])
 
     def test_custom_resume_permission_denied(self):
         """Test resume with custom resume permission - denied flow type."""
@@ -284,9 +306,7 @@ class PermissionsTest(APITestCase):
 
         # test_graph_1 uses default IsAuthenticated for resume (allows authenticated users)
         # Might fail for other reasons, but permission should pass
-        self.assertIn(
-            response.status_code, [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST]
-        )
+        self.assertIn(response.status_code, [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST])
 
     # ==================== AllowAny Permission Tests ====================
 
@@ -328,9 +348,7 @@ class PermissionsTest(APITestCase):
             self.client.force_authenticate(user=user)
 
         url = reverse("graflow:flow-list")
-        response = self.client.post(
-            url, {"flow_type": "allowany_crud_resume"}, format="json"
-        )
+        response = self.client.post(url, {"flow_type": "allowany_crud_resume"}, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
@@ -421,3 +439,56 @@ class PermissionsTest(APITestCase):
         self.assertIn("crud_restricted_to_graph1", flow_types)
         self.assertIn("auth_default_crud_resume_restricted_to_graph2", flow_types)
         self.assertIn("auth_default_crud_resume", flow_types)
+
+    def test_list_with_flow_type_filter_applies_object_permissions(self):
+        """List with flow_type filter should still enforce object permissions."""
+        FlowFactory.create(
+            user=self.user1,
+            flow_type="crud_object_filtered",
+            app_name="test_app",
+            display_name="allowed",
+        )
+        FlowFactory.create(
+            user=self.user1,
+            flow_type="crud_object_filtered",
+            app_name="test_app",
+            display_name="denied",
+        )
+
+        self.client.force_authenticate(user=self.user1)
+        url = reverse("graflow:flow-list")
+        response = self.client.get(url, {"flow_type": "crud_object_filtered"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["display_name"], "allowed")
+
+    def test_most_recent_with_flow_type_filter_applies_object_permissions(self):
+        """Most recent with flow_type filter should still enforce object permissions."""
+        allowed_flow = FlowFactory.create(
+            user=self.user1,
+            flow_type="crud_object_filtered",
+            app_name="test_app",
+            display_name="allowed",
+        )
+        denied_flow = FlowFactory.create(
+            user=self.user1,
+            flow_type="crud_object_filtered",
+            app_name="test_app",
+            display_name="denied",
+        )
+
+        # Ensure denied flow is more recent
+        Flow.objects.filter(pk=allowed_flow.pk).update(
+            last_resumed_at=timezone.datetime(2020, 1, 1, tzinfo=UTC)
+        )
+        Flow.objects.filter(pk=denied_flow.pk).update(
+            last_resumed_at=timezone.datetime(2021, 1, 1, tzinfo=UTC)
+        )
+
+        self.client.force_authenticate(user=self.user1)
+        url = reverse("graflow:flow-most-recent")
+        response = self.client.get(url, {"flow_type": "crud_object_filtered"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["display_name"], "allowed")

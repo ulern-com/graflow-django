@@ -183,9 +183,7 @@ class FlowQuerySet(models.QuerySet):
                         if permission.has_object_permission(request, view, flow):
                             allowed_flows.append(flow)
             except Exception as e:
-                logger.warning(
-                    f"Error checking permission for {app_name}:{flow_type_name}: {e}"
-                )
+                logger.warning(f"Error checking permission for {app_name}:{flow_type_name}: {e}")
                 # On error, skip these flows (fail secure)
                 continue
 
@@ -233,9 +231,7 @@ def filter_flows_by_permissions(flows, request, view, permission_type: str = "cr
                     if permission.has_object_permission(request, view, flow):
                         allowed_flows.append(flow)
         except Exception as e:
-            logger.warning(
-                f"Error checking permission for {app_name}:{flow_type_name}: {e}"
-            )
+            logger.warning(f"Error checking permission for {app_name}:{flow_type_name}: {e}")
             # On error, skip these flows (fail secure)
             continue
 
