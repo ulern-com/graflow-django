@@ -317,16 +317,26 @@ class Flow(models.Model):
 
     @cached_property
     def graph(self):
-        flow_type_obj = FlowType.objects.get(
-            app_name=self.app_name, flow_type=self.flow_type, version=self.graph_version
-        )
+        try:
+            flow_type_obj = FlowType.objects.get(
+                app_name=self.app_name, flow_type=self.flow_type, version=self.graph_version
+            )
+        except FlowType.DoesNotExist as e:
+            raise ValueError(
+                f"FlowType not found for {self.app_name}:{self.flow_type}:{self.graph_version}"
+            ) from e
         return flow_type_obj.get_graph()
 
     @cached_property
     def graph_state_definition(self):
-        flow_type_obj = FlowType.objects.get(
-            app_name=self.app_name, flow_type=self.flow_type, version=self.graph_version
-        )
+        try:
+            flow_type_obj = FlowType.objects.get(
+                app_name=self.app_name, flow_type=self.flow_type, version=self.graph_version
+            )
+        except FlowType.DoesNotExist as e:
+            raise ValueError(
+                f"FlowType not found for {self.app_name}:{self.flow_type}:{self.graph_version}"
+            ) from e
         return flow_type_obj.get_state_definition()
 
     @property

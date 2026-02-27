@@ -195,6 +195,18 @@ class FlowModelTest(TestCase):
         self.assertIsInstance(state, dict)
         self.assertNotIn("current_state_name", state)
 
+    def test_graph_state_definition_missing_flow_type(self):
+        """Accessing graph_state_definition should raise a clear error if FlowType is missing."""
+        flow = FlowFactory.create(
+            user=self.user1,
+            flow_type="test_flow",
+            graph_version="missing_version",
+            app_name="test_app",
+        )
+        with self.assertRaises(ValueError) as context:
+            _ = flow.graph_state_definition
+        self.assertIn("FlowType not found", str(context.exception))
+
 
 class FlowQuerySetTest(TestCase):
     """Unit tests for FlowQuerySet methods."""
